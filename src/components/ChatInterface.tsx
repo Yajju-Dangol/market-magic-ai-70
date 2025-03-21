@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, RefreshCw, FileSearch, List } from 'lucide-react';
+import { Send, Bot, User, RefreshCw, FileSearch, List, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Stock } from '@/utils/types';
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { getMarketInsights, scrapeBrowserInteractions } from '@/utils/api';
 import { useWatchlist } from '@/hooks/useWatchlist';
+import { usePortfolio } from '@/hooks/usePortfolio';
 
 interface Message {
   id: string;
@@ -22,11 +23,13 @@ interface ChatInterfaceProps {
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
   const { watchlistItems } = useWatchlist();
+  const { portfolioItems } = usePortfolio();
+  
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       role: 'assistant',
-      content: 'Hello! I can help you analyze the current market data and provide insights. What would you like to know about the stocks? You can also ask me to "scrape latest data" to get the most up-to-date information.',
+      content: 'Hello! I can help you analyze the current market data and provide insights. What would you like to know about the stocks? You can ask about your watchlist, your portfolio, or request me to "scrape latest data" to get the most up-to-date information.',
       timestamp: new Date(),
     },
   ]);
@@ -59,10 +62,89 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
     setIsLoading(true);
     
     try {
+      // Check if the user is asking about their portfolio
+      if (inputMessage.toLowerCase().includes('portfolio') || 
+          inputMessage.toLowerCase().includes('my stocks') ||
+          inputMessage.toLowerCase().includes('my holdings') ||
+          inputMessage.toLowerCase().includes('i own')) {
+        
+        if (portfolioItems.length === 0) {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: 'Your portfolio is currently empty. You can add stocks to your portfolio in the Portfolio tab.',
+            timestamp: new Date(),
+          };
+          
+          setMessages(prev => [...prev, assistantMessage]);
+        } else {
+          // Get current prices for portfolio stocks if available
+          const portfolioWithCurrentPrices = portfolioItems.map(portfolioStock => {
+            const currentStockData = stocks.find(s => s.symbol === portfolioStock.symbol);
+            return {
+              ...portfolioStock,
+              currentPrice: currentStockData?.price || null,
+              priceChange: currentStockData ? currentStockData.price - portfolioStock.buyPrice : null,
+              priceChangePercent: currentStockData 
+                ? ((currentStockData.price - portfolioStock.buyPrice) / portfolioStock.buyPrice) * 100 
+                : null
+            };
+          });
+          
+          // Calculate total value and gain/loss
+          const totalInvestment = portfolioItems.reduce(
+            (sum, stock) => sum + stock.shares * stock.buyPrice, 0
+          );
+          
+          const currentValue = portfolioWithCurrentPrices.reduce(
+            (sum, stock) => sum + stock.shares * (stock.currentPrice || stock.buyPrice), 0
+          );
+          
+          const totalGainLoss = currentValue - totalInvestment;
+          const totalGainLossPercent = (totalGainLoss / totalInvestment) * 100;
+          
+          // Create a message with portfolio information
+          let portfolioText = `Here's your current portfolio summary:\n\n`;
+          
+          portfolioWithCurrentPrices.forEach(stock => {
+            const currentPriceText = stock.currentPrice 
+              ? `Current price: $${stock.currentPrice.toFixed(2)} (${stock.priceChangePercent && stock.priceChangePercent > 0 ? '+' : ''}${stock.priceChangePercent?.toFixed(2) || 'N/A'}%)` 
+              : 'Current price not available';
+              
+            portfolioText += `${stock.symbol}: ${stock.shares} shares at $${stock.buyPrice.toFixed(2)} per share. ${currentPriceText}\n`;
+            
+            if (stock.currentPrice) {
+              const stockValue = stock.shares * stock.currentPrice;
+              const stockCost = stock.shares * stock.buyPrice;
+              const stockGainLoss = stockValue - stockCost;
+              portfolioText += `Total value: $${stockValue.toFixed(2)} (${stockGainLoss > 0 ? '+' : ''}$${stockGainLoss.toFixed(2)})\n`;
+            } else {
+              portfolioText += `Total cost: $${(stock.shares * stock.buyPrice).toFixed(2)}\n`;
+            }
+            
+            portfolioText += `\n`;
+          });
+          
+          portfolioText += `Total portfolio cost: $${totalInvestment.toFixed(2)}\n`;
+          
+          if (portfolioWithCurrentPrices.some(s => s.currentPrice)) {
+            portfolioText += `Current portfolio value: $${currentValue.toFixed(2)}\n`;
+            portfolioText += `Overall gain/loss: ${totalGainLoss > 0 ? '+' : ''}$${totalGainLoss.toFixed(2)} (${totalGainLossPercent > 0 ? '+' : ''}${totalGainLossPercent.toFixed(2)}%)\n`;
+          }
+          
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: portfolioText,
+            timestamp: new Date(),
+          };
+          
+          setMessages(prev => [...prev, assistantMessage]);
+        }
+      }
       // Check if the user is asking about their watchlist
-      if (inputMessage.toLowerCase().includes('watchlist') || 
-          inputMessage.toLowerCase().includes('watching') ||
-          inputMessage.toLowerCase().includes('my stocks')) {
+      else if (inputMessage.toLowerCase().includes('watchlist') || 
+          inputMessage.toLowerCase().includes('watching')) {
         
         if (watchlistItems.length === 0) {
           const assistantMessage: Message = {
@@ -128,12 +210,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
         setMessages(prev => [...prev, responseMessage]);
       } else {
         // Normal AI response for market insights
-        // Include watchlist information in the query to make the AI aware of it
+        // Include watchlist and portfolio information in the query to make the AI aware of them
         const watchlistInfo = watchlistItems.length > 0 
           ? `The user has the following stocks in their watchlist: ${watchlistItems.map(item => item.symbol).join(', ')}.` 
           : 'The user has no stocks in their watchlist.';
+          
+        const portfolioInfo = portfolioItems.length > 0
+          ? `The user has the following stocks in their portfolio: ${portfolioItems.map(item => `${item.symbol} (${item.shares} shares at ${item.buyPrice})`).join(', ')}.`
+          : 'The user has no stocks in their portfolio.';
         
-        const response = await getMarketInsights(stocks, `${watchlistInfo} ${inputMessage}`);
+        const response = await getMarketInsights(stocks, `${watchlistInfo} ${portfolioInfo} ${inputMessage}`);
         
         // Add assistant message
         const assistantMessage: Message = {
@@ -178,9 +264,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
         <h2 className="text-xl font-bold flex items-center gap-2">
           <Bot size={20} /> Market AI Assistant
         </h2>
-        <div className="flex items-center mt-1 text-xs text-muted-foreground">
-          <List size={14} className="mr-1" />
-          <span>Watching {watchlistItems.length} stocks</span>
+        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+          <div className="flex items-center">
+            <List size={14} className="mr-1" />
+            <span>Watching {watchlistItems.length} stocks</span>
+          </div>
+          <div className="flex items-center">
+            <Briefcase size={14} className="mr-1" />
+            <span>Portfolio: {portfolioItems.length} stocks</span>
+          </div>
         </div>
       </div>
       
@@ -227,7 +319,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
       <div className="p-4 border-t bg-background">
         <div className="flex gap-2">
           <Textarea
-            placeholder="Ask about market trends, your watchlist, or investment ideas. Try 'Show my watchlist'..."
+            placeholder="Ask about market trends, your watchlist, portfolio, or investment ideas..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyDown={handleKeyPress}
@@ -246,7 +338,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
         <div className="mt-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <FileSearch size={12} />
-            Try asking: "What's in my watchlist?" or "Which stocks should I buy right now?"
+            Try asking: "Show my portfolio", "What's in my watchlist?" or "Which stocks should I buy right now?"
           </span>
         </div>
       </div>

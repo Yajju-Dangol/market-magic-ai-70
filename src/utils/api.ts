@@ -8,7 +8,6 @@ const SCRAPE_TOKEN = import.meta.env.VITE_SCRAPE_DO_TOKEN || '';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 const TARGET_URL = 'https://www.nepsetrading.com/market/stocks';
 
-// Define the possible CSS selectors for market tables
 const possibleSelectors = [
   'table.w-full',
   'table.stock-table',
@@ -18,7 +17,6 @@ const possibleSelectors = [
   '.market-data table'
 ];
 
-// Function to scrape stock data using browser interactions
 export const scrapeBrowserInteractions = async (): Promise<ApiResponse> => {
   try {
     if (!SCRAPE_TOKEN) {
@@ -32,36 +30,29 @@ export const scrapeBrowserInteractions = async (): Promise<ApiResponse> => {
     
     const targetUrl = encodeURIComponent(TARGET_URL);
     
-    // Create more comprehensive browser interactions to navigate and extract all data
     const browserActions = [
-      { "Action": "Wait", "Timeout": 3000 }, // Wait for initial page load
-      { "Action": "ScrollY", "Value": 300 }, // Scroll down to view tables
-      { "Action": "WaitSelector", "WaitSelector": "table", "Timeout": 5000 }, // Wait for tables to load
-      // Execute custom JavaScript to ensure all stock rows are loaded/visible
+      { "Action": "Wait", "Timeout": 3000 },
+      { "Action": "ScrollY", "Value": 300 },
+      { "Action": "WaitSelector", "WaitSelector": "table", "Timeout": 5000 },
       { "Action": "Execute", "Execute": `
-        // Try to click any "load more" or pagination buttons
         const loadMoreBtn = document.querySelector('.load-more, .pagination button, button:contains("Load More")');
         if (loadMoreBtn) loadMoreBtn.click();
         
-        // Wait for new content to load
         setTimeout(() => {
-          // Scroll to bottom to trigger lazy loading if present
           window.scrollTo(0, document.body.scrollHeight);
         }, 1000);
       `},
-      { "Action": "Wait", "Timeout": 2000 }, // Wait for any dynamic content to load
-      { "Action": "ScrollY", "Value": 1000 }, // Scroll further down 
-      { "Action": "Wait", "Timeout": 1000 } // Final wait to ensure everything is loaded
+      { "Action": "Wait", "Timeout": 2000 },
+      { "Action": "ScrollY", "Value": 1000 },
+      { "Action": "Wait", "Timeout": 1000 }
     ];
     
-    // Encode the browser actions
     const jsonData = JSON.stringify(browserActions);
     const encodedJsonData = encodeURIComponent(jsonData);
     
     const response = await axios({
       method: 'GET',
       url: `https://api.scrape.do/?token=${SCRAPE_TOKEN}&url=${targetUrl}&render=true&playWithBrowser=${encodedJsonData}`,
-      // Using render=true to ensure JavaScript executes on the page
     });
 
     console.log('Browser interaction response status:', response.status);
@@ -89,12 +80,10 @@ export const scrapeBrowserInteractions = async (): Promise<ApiResponse> => {
       console.log('Tables found:', $('table').length);
       console.log('First table classes:', $('table').first().attr('class'));
       
-      // Log the HTML content for debugging
-      console.log('HTML content snippet:', response.data.substring(0, 500));
+      const bodyText = $('body').text().substring(0, 200);
+      console.log('Body text excerpt:', bodyText);
       
-      // Try alternative parsing with executeJavaScript approach
       try {
-        // Make another request with a JavaScript extraction approach
         const extractScript = [
           { "Action": "Wait", "Timeout": 3000 },
           { "Action": "Execute", "Execute": `
@@ -146,7 +135,6 @@ export const scrapeBrowserInteractions = async (): Promise<ApiResponse> => {
         console.error('Error with JavaScript extraction approach:', extractErr);
       }
       
-      // If still no data, use mock data
       return {
         success: true,
         data: generateMockStockData(),
@@ -157,7 +145,6 @@ export const scrapeBrowserInteractions = async (): Promise<ApiResponse> => {
     return { success: true, data: stockData };
   } catch (error) {
     console.error('Error scraping stock data with browser interactions:', error);
-    // Return mock data on error for better user experience
     return { 
       success: true, 
       data: generateMockStockData(),
@@ -166,7 +153,6 @@ export const scrapeBrowserInteractions = async (): Promise<ApiResponse> => {
   }
 };
 
-// Function to scrape stock data
 export const scrapeStockData = async (): Promise<ApiResponse> => {
   try {
     if (!SCRAPE_TOKEN) {
@@ -182,7 +168,6 @@ export const scrapeStockData = async (): Promise<ApiResponse> => {
     const response = await axios({
       method: 'GET',
       url: `https://api.scrape.do/?token=${SCRAPE_TOKEN}&url=${targetUrl}`,
-      // Remove User-Agent header as it's being refused
     });
 
     console.log('Response status:', response.status);
@@ -213,7 +198,6 @@ export const scrapeStockData = async (): Promise<ApiResponse> => {
       const bodyText = $('body').text().substring(0, 200);
       console.log('Body text excerpt:', bodyText);
       
-      // If no stock data found, create mock data for demonstration
       return {
         success: true,
         data: generateMockStockData()
@@ -223,7 +207,6 @@ export const scrapeStockData = async (): Promise<ApiResponse> => {
     return { success: true, data: stockData };
   } catch (error) {
     console.error('Error scraping stock data:', error);
-    // Return mock data on error for better user experience
     return { 
       success: true, 
       data: generateMockStockData() 
@@ -231,7 +214,6 @@ export const scrapeStockData = async (): Promise<ApiResponse> => {
   }
 };
 
-// Function to generate mock stock data for demonstration
 const generateMockStockData = (): Stock[] => {
   const mockStocks: Stock[] = [
     {
@@ -335,7 +317,6 @@ const generateMockStockData = (): Stock[] => {
   return mockStocks;
 };
 
-// Function to parse the HTML and extract stock data using Cheerio
 const parseStockData = (htmlData: string): Stock[] => {
   try {
     if (!htmlData || typeof htmlData !== 'string') {
@@ -406,16 +387,10 @@ const parseStockData = (htmlData: string): Stock[] => {
       }
     });
     
-    // If we didn't get any stocks from the tables, try a more aggressive approach
     if (stockData.length === 0) {
-      // Look for any elements that might contain stock information
-      // This is a fallback for sites with non-standard table structures
-      console.log('Trying alternative scraping approach...');
-      
       $('div, tr, li').each((i, el) => {
         const text = $(el).text().trim();
         
-        // Look for patterns that might indicate stock data (symbol + price)
         const symbolMatch = text.match(/([A-Z]{2,5})\s+[-+]?[0-9]*\.?[0-9]+/);
         if (symbolMatch) {
           const priceMatch = text.match(/[-+]?[0-9]*\.?[0-9]+/);
@@ -427,8 +402,8 @@ const parseStockData = (htmlData: string): Stock[] => {
               name: `${symbolMatch[1]} Stock`,
               price: parseFloat(priceMatch[0]),
               change: changeMatch ? parseFloat(changeMatch[0]) : 0,
-              changePercent: 0, // Can't reliably extract this
-              volume: 0, // Can't reliably extract this
+              changePercent: 0,
+              volume: 0,
               high: 0,
               low: 0,
               open: 0,
@@ -437,7 +412,7 @@ const parseStockData = (htmlData: string): Stock[] => {
             
             stockData.push(stock);
             
-            if (stockData.length >= 20) return false; // Limit to 20 stocks
+            if (stockData.length >= 20) return false;
           }
         }
       });
@@ -451,7 +426,6 @@ const parseStockData = (htmlData: string): Stock[] => {
   }
 };
 
-// Function to get stock recommendations using Gemini AI
 export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRecommendation[]> => {
   try {
     if (!GEMINI_API_KEY) {
@@ -475,7 +449,6 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
       previousClose: stock.previousClose
     }));
     
-    // Try to get watchlist data
     let watchlistSymbols: string[] = [];
     try {
       const { data } = await supabase
@@ -488,11 +461,25 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
       }
     } catch (error) {
       console.error('Error fetching watchlist:', error);
-      // Continue without watchlist data
+    }
+
+    let portfolioItems: any[] = [];
+    try {
+      const { data } = await supabase
+        .from('portfolio')
+        .select('*')
+        .eq('user_id', '00000000-0000-0000-0000-000000000000');
+      
+      if (data) {
+        portfolioItems = data;
+      }
+    } catch (error) {
+      console.error('Error fetching portfolio:', error);
     }
 
     console.log('Sending stock data to Gemini:', stocksData.length, 'stocks');
     console.log('User watchlist symbols:', watchlistSymbols);
+    console.log('User portfolio items:', portfolioItems.length);
 
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
@@ -500,10 +487,15 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
     const watchlistContext = watchlistSymbols.length > 0 
       ? `The user is watching the following stocks: ${watchlistSymbols.join(', ')}. Give these stocks special consideration in your recommendations.` 
       : '';
+      
+    const portfolioContext = portfolioItems.length > 0
+      ? `The user owns the following stocks in their portfolio: ${portfolioItems.map(item => `${item.symbol} (${item.shares} shares at $${item.buy_price})`).join(', ')}. Consider their existing portfolio in your recommendations.`
+      : '';
 
     const prompt = `
       Based on the following stock market data from Nepal, provide trading recommendations for the top 3 most promising stocks.
       ${watchlistContext}
+      ${portfolioContext}
       For each recommendation, specify whether to buy, sell, or hold, with a confidence level (0-100), 
       a brief reason for the recommendation, and a timeframe (short, medium, or long).
       Return the response in a JSON format with an array of objects containing symbol, action, confidence, reason, and timeFrame.
@@ -525,81 +517,92 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
         return recommendations;
       } catch (e) {
         console.error('Error parsing JSON from Gemini response:', e);
-        // Return mock recommendations on error
-        return generateMockRecommendations(stocks, watchlistSymbols);
+        return generateMockRecommendations(stocks, watchlistSymbols, portfolioItems);
       }
     } else {
       console.error('JSON pattern not found in response:', response);
-      // Return mock recommendations on error
-      return generateMockRecommendations(stocks, watchlistSymbols);
+      return generateMockRecommendations(stocks, watchlistSymbols, portfolioItems);
     }
   } catch (error) {
     console.error('Error getting stock recommendations:', error);
-    // Return mock data for better user experience
     return generateMockRecommendations(stocks);
   }
 };
 
-// Function to generate mock recommendations
-const generateMockRecommendations = (stocks: Stock[], watchlistSymbols: string[] = []): StockRecommendation[] => {
-  // First prioritize watchlist stocks if available
+const generateMockRecommendations = (
+  stocks: Stock[], 
+  watchlistSymbols: string[] = [], 
+  portfolioItems: any[] = []
+): StockRecommendation[] => {
   let candidateStocks = [...stocks];
   let watchlistStocks: Stock[] = [];
+  let portfolioStocks: Stock[] = [];
+  
+  const portfolioSymbols = portfolioItems.map(item => item.symbol);
+  
+  if (portfolioSymbols.length > 0) {
+    portfolioStocks = stocks.filter(stock => portfolioSymbols.includes(stock.symbol));
+  }
   
   if (watchlistSymbols.length > 0) {
     watchlistStocks = stocks.filter(stock => watchlistSymbols.includes(stock.symbol));
+  }
+  
+  if (portfolioStocks.length > 0 || watchlistStocks.length > 0) {
+    candidateStocks = candidateStocks.filter(stock => 
+      !portfolioSymbols.includes(stock.symbol) && !watchlistSymbols.includes(stock.symbol)
+    );
     
-    // If we have watchlist stocks, use them first, then fill with top performers
-    if (watchlistStocks.length > 0) {
-      // Remove watchlist stocks from candidates to avoid duplicates
-      candidateStocks = candidateStocks.filter(stock => !watchlistSymbols.includes(stock.symbol));
-      // Sort the remaining by performance
-      candidateStocks.sort((a, b) => b.changePercent - a.changePercent);
-      
-      // Combine watchlist stocks with top performers to get 3 recommendations
-      candidateStocks = [...watchlistStocks, ...candidateStocks].slice(0, 3);
-    } else {
-      // If no watchlist stocks were found, just sort by performance
-      candidateStocks.sort((a, b) => b.changePercent - a.changePercent);
-      candidateStocks = candidateStocks.slice(0, 3);
-    }
+    candidateStocks.sort((a, b) => b.changePercent - a.changePercent);
+    
+    candidateStocks = [...portfolioStocks, ...watchlistStocks, ...candidateStocks].slice(0, 3);
   } else {
-    // No watchlist, just sort by performance
     candidateStocks.sort((a, b) => b.changePercent - a.changePercent);
     candidateStocks = candidateStocks.slice(0, 3);
   }
   
   const timeFrames: Array<'short' | 'medium' | 'long'> = ['short', 'medium', 'long'];
-  const actions: Array<'buy' | 'sell' | 'hold'> = ['buy', 'sell', 'hold'];
   
   return candidateStocks.map((stock, index) => {
-    // Determine action based on change percent
     let action: 'buy' | 'sell' | 'hold';
-    if (stock.changePercent > 1) {
-      action = 'buy';
-    } else if (stock.changePercent < -1) {
-      action = 'sell';
+    const inPortfolio = portfolioSymbols.includes(stock.symbol);
+    
+    if (inPortfolio) {
+      if (stock.changePercent < -2) {
+        action = 'sell';
+      } else if (stock.changePercent > 3) {
+        action = 'hold';
+      } else {
+        action = 'hold';
+      }
     } else {
-      action = 'hold';
+      if (stock.changePercent > 1) {
+        action = 'buy';
+      } else if (stock.changePercent < -1) {
+        action = 'sell';
+      } else {
+        action = 'hold';
+      }
     }
     
-    // Add extra context for watchlist stocks
-    const watchlistContext = watchlistSymbols.includes(stock.symbol) 
-      ? ' This stock is in your watchlist.' 
-      : '';
+    let contextText = '';
+    if (portfolioSymbols.includes(stock.symbol)) {
+      contextText += ' This stock is in your portfolio.';
+    }
+    if (watchlistSymbols.includes(stock.symbol)) {
+      contextText += ' This stock is in your watchlist.';
+    }
     
-    // Generate mock recommendations
     return {
       symbol: stock.symbol,
       action: action,
-      confidence: Math.floor(60 + Math.random() * 30), // 60-90
-      reason: `${action === 'buy' ? 'Positive momentum' : action === 'sell' ? 'Negative trend' : 'Stable performance'} with ${stock.changePercent.toFixed(2)}% change. Volume is ${stock.volume} which indicates ${stock.volume > 100000 ? 'strong' : 'moderate'} market interest.${watchlistContext}`,
+      confidence: Math.floor(60 + Math.random() * 30),
+      reason: `${action === 'buy' ? 'Positive momentum' : action === 'sell' ? 'Negative trend' : 'Stable performance'} with ${stock.changePercent.toFixed(2)}% change. Volume is ${stock.volume} which indicates ${stock.volume > 100000 ? 'strong' : 'moderate'} market interest.${contextText}`,
       timeFrame: timeFrames[index % timeFrames.length]
     };
   });
 };
 
-// Function to get market insights using Gemini AI
 export const getMarketInsights = async (stocks: Stock[], userQuery: string): Promise<string> => {
   try {
     if (!GEMINI_API_KEY) {
@@ -623,7 +626,6 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
       previousClose: stock.previousClose
     }));
     
-    // Try to get watchlist data
     let watchlistItems: any[] = [];
     try {
       const { data } = await supabase
@@ -636,14 +638,30 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
       }
     } catch (error) {
       console.error('Error fetching watchlist:', error);
-      // Continue without watchlist data
     }
     
-    // Create a string with watchlist stocks for the AI
+    let portfolioItems: any[] = [];
+    try {
+      const { data } = await supabase
+        .from('portfolio')
+        .select('*')
+        .eq('user_id', '00000000-0000-0000-0000-000000000000');
+      
+      if (data) {
+        portfolioItems = data;
+      }
+    } catch (error) {
+      console.error('Error fetching portfolio:', error);
+    }
+    
     const watchlistContext = watchlistItems.length > 0
       ? `The user has the following stocks in their watchlist: ${watchlistItems.map(item => item.symbol).join(', ')}.`
       : 'The user has no stocks in their watchlist.';
-
+      
+    const portfolioContext = portfolioItems.length > 0
+      ? `The user owns the following stocks in their portfolio: ${portfolioItems.map(item => `${item.symbol} (${item.shares} shares at $${item.buy_price})`).join(', ')}.`
+      : 'The user has no stocks in their portfolio.';
+    
     console.log('Sending stock data to Gemini for insights:', stocksData.length, 'stocks');
 
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -654,12 +672,13 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
       ${JSON.stringify(stocksData)}
       
       ${watchlistContext}
+      ${portfolioContext}
       
       Respond to the user's query: "${userQuery}"
       
       Provide detailed analysis, insights, and clear explanations. If the user asks about 
       specific stocks, analyze those stocks from the provided data.
-      If the user mentions their watchlist or watched stocks, focus your analysis on those stocks.
+      If the user mentions their watchlist or portfolio stocks, focus your analysis on those stocks.
       Focus on the provided stock data, but you can also use your general knowledge 
       about markets and investment principles to provide context and explanation.
       Be concise and informative.
@@ -669,23 +688,106 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
     const response = await result.response.text();
     
     if (!response || response.trim() === '') {
-      return generateMockInsight(userQuery, stocks, watchlistItems.map(item => item.symbol));
+      return generateMockInsight(userQuery, stocks, watchlistItems.map(item => item.symbol), portfolioItems);
     }
     
     return response;
   } catch (error) {
     console.error('Error getting market insights:', error);
-    // Return mock insights for better user experience
     return generateMockInsight(userQuery, stocks);
   }
 };
 
-// Generate mock insights when the API fails
-const generateMockInsight = (query: string, stocks: Stock[], watchlistSymbols: string[] = []): string => {
+const generateMockInsight = (
+  query: string, 
+  stocks: Stock[], 
+  watchlistSymbols: string[] = [],
+  portfolioItems: any[] = []
+): string => {
   const lowerQuery = query.toLowerCase();
+  const portfolioSymbols = portfolioItems.map(item => item.symbol);
   
-  // Check if the query is about the watchlist
-  if (lowerQuery.includes('watchlist') || lowerQuery.includes('watching') || lowerQuery.includes('my stocks')) {
+  if (lowerQuery.includes('portfolio') || 
+      (lowerQuery.includes('my') && lowerQuery.includes('stocks')) ||
+      lowerQuery.includes('my holdings') ||
+      lowerQuery.includes('i own')) {
+    
+    if (portfolioItems.length === 0) {
+      return `You don't have any stocks in your portfolio yet. You can add stocks to your portfolio in the Portfolio tab.`;
+    }
+    
+    const portfolioStocks = stocks.filter(stock => portfolioSymbols.includes(stock.symbol));
+    
+    if (portfolioStocks.length === 0) {
+      return `You have ${portfolioItems.length} stocks in your portfolio, but I couldn't find current data for them in the available market information.`;
+    }
+    
+    const totalInvestment = portfolioItems.reduce(
+      (sum, item) => sum + (Number(item.shares) * Number(item.buy_price)), 0
+    );
+    
+    let currentValue = 0;
+    let totalGainLoss = 0;
+    
+    portfolioItems.forEach(item => {
+      const stockData = stocks.find(s => s.symbol === item.symbol);
+      if (stockData) {
+        const stockValue = Number(item.shares) * stockData.price;
+        const costBasis = Number(item.shares) * Number(item.buy_price);
+        currentValue += stockValue;
+        totalGainLoss += (stockValue - costBasis);
+      } else {
+        currentValue += Number(item.shares) * Number(item.buy_price);
+      }
+    });
+    
+    const gainLossPercent = totalInvestment > 0 ? (totalGainLoss / totalInvestment) * 100 : 0;
+    
+    const portfolioPerformance = portfolioItems.map(item => {
+      const stockData = stocks.find(s => s.symbol === item.symbol);
+      const currentPrice = stockData?.price || Number(item.buy_price);
+      const priceChange = currentPrice - Number(item.buy_price);
+      const priceChangePercent = (priceChange / Number(item.buy_price)) * 100;
+      
+      return {
+        symbol: item.symbol,
+        shares: Number(item.shares),
+        buyPrice: Number(item.buy_price),
+        currentPrice,
+        priceChange,
+        priceChangePercent,
+        totalValue: Number(item.shares) * currentPrice,
+        totalCost: Number(item.shares) * Number(item.buy_price),
+        gainLoss: (Number(item.shares) * currentPrice) - (Number(item.shares) * Number(item.buy_price)),
+        stock: stockData
+      };
+    });
+    
+    const bestPerformer = [...portfolioPerformance].sort((a, b) => b.priceChangePercent - a.priceChangePercent)[0];
+    const worstPerformer = [...portfolioPerformance].sort((a, b) => a.priceChangePercent - b.priceChangePercent)[0];
+    
+    return `
+Here's an analysis of your portfolio:
+
+You currently own ${portfolioItems.length} stocks with a total investment of $${totalInvestment.toFixed(2)}.
+Current portfolio value: $${currentValue.toFixed(2)}
+Overall gain/loss: ${totalGainLoss >= 0 ? '+' : ''}$${totalGainLoss.toFixed(2)} (${gainLossPercent >= 0 ? '+' : ''}${gainLossPercent.toFixed(2)}%)
+
+Your best performing stock is ${bestPerformer.symbol} with a ${bestPerformer.priceChangePercent >= 0 ? 'gain' : 'loss'} of ${Math.abs(bestPerformer.priceChangePercent).toFixed(2)}%.
+Your weakest performing stock is ${worstPerformer.symbol} with a ${worstPerformer.priceChangePercent >= 0 ? 'gain' : 'loss'} of ${Math.abs(worstPerformer.priceChangePercent).toFixed(2)}%.
+
+${portfolioPerformance.length > 2 ? 
+  `Other stocks in your portfolio: ${portfolioPerformance
+    .filter(s => s.symbol !== bestPerformer.symbol && s.symbol !== worstPerformer.symbol)
+    .map(s => `${s.symbol}: ${s.priceChangePercent >= 0 ? '+' : ''}${s.priceChangePercent.toFixed(2)}%`)
+    .join(', ')}.` 
+  : ''}
+
+Would you like more detailed analysis on any specific stock in your portfolio?
+`;
+  }
+  
+  if (lowerQuery.includes('watchlist') || lowerQuery.includes('watching')) {
     if (watchlistSymbols.length === 0) {
       return `You don't have any stocks in your watchlist yet. You can add stocks to your watchlist by clicking the "Watch" button on any stock card in the Market tab or AI Signals tab.`;
     }
@@ -718,7 +820,6 @@ Would you like more detailed analysis on any specific stock in your watchlist?
 `;
   }
   
-  // Check if the query is about a specific stock
   const mentionedStock = stocks.find(stock => 
     lowerQuery.includes(stock.symbol.toLowerCase()) || 
     lowerQuery.includes(stock.name.toLowerCase())
@@ -726,6 +827,23 @@ Would you like more detailed analysis on any specific stock in your watchlist?
   
   if (mentionedStock) {
     const isWatched = watchlistSymbols.includes(mentionedStock.symbol);
+    const inPortfolio = portfolioSymbols.includes(mentionedStock.symbol);
+    const portfolioItem = portfolioItems.find(item => item.symbol === mentionedStock.symbol);
+    
+    let portfolioAnalysis = '';
+    if (inPortfolio && portfolioItem) {
+      const shares = Number(portfolioItem.shares);
+      const buyPrice = Number(portfolioItem.buy_price);
+      const currentValue = shares * mentionedStock.price;
+      const cost = shares * buyPrice;
+      const gainLoss = currentValue - cost;
+      const gainLossPercent = (gainLoss / cost) * 100;
+      
+      portfolioAnalysis = `
+You own ${shares} shares of this stock at an average purchase price of $${buyPrice.toFixed(2)}.
+Current value of your position: $${currentValue.toFixed(2)}
+Total gain/loss: ${gainLoss >= 0 ? '+' : ''}$${gainLoss.toFixed(2)} (${gainLossPercent >= 0 ? '+' : ''}${gainLossPercent.toFixed(2)}%)`;
+    }
     
     return `
 Based on the current market data, ${mentionedStock.symbol} (${mentionedStock.name}) is trading at NPR ${mentionedStock.price.toFixed(2)} with a ${mentionedStock.change > 0 ? 'gain' : 'loss'} of ${Math.abs(mentionedStock.changePercent).toFixed(2)}%.
@@ -735,27 +853,37 @@ The stock has a daily trading volume of ${mentionedStock.volume.toLocaleString()
 ${mentionedStock.changePercent > 2 ? 'This stock is showing strong bullish momentum and might be worth considering for short-term investment opportunities.' : 
   mentionedStock.changePercent < -2 ? 'This stock is showing bearish trends. It might be wise to wait for signs of reversal before considering investment.' :
   'The stock is showing relatively stable performance in the current market conditions.'}
+${portfolioAnalysis}
 
-${isWatched ? `This stock is currently in your watchlist.` : `You are not currently watching this stock. You can add it to your watchlist by clicking the "Watch" button on its stock card.`}
+${inPortfolio ? `This stock is currently in your portfolio.` : ''}
+${isWatched ? `This stock is currently in your watchlist.` : ''}
+${!inPortfolio && !isWatched ? `You are not currently watching or holding this stock. You can add it to your watchlist by clicking the "Watch" button on its stock card.` : ''}
 
 Remember that all investment decisions should be based on comprehensive analysis and align with your overall investment strategy.
 `;
   }
   
-  // General market overview
   const gainers = stocks.filter(s => s.changePercent > 0).length;
   const losers = stocks.filter(s => s.changePercent < 0).length;
   const avgChange = stocks.reduce((sum, stock) => sum + stock.changePercent, 0) / stocks.length;
   const topGainer = [...stocks].sort((a, b) => b.changePercent - a.changePercent)[0];
   const topLoser = [...stocks].sort((a, b) => a.changePercent - b.changePercent)[0];
   
-  // Watchlist context for general market overview
   let watchlistContext = '';
   if (watchlistSymbols.length > 0) {
     const watchedStocks = stocks.filter(stock => watchlistSymbols.includes(stock.symbol));
     if (watchedStocks.length > 0) {
       const watchlistPerformance = watchedStocks.reduce((sum, stock) => sum + stock.changePercent, 0) / watchedStocks.length;
       watchlistContext = `\nRegarding your watchlist: Your watched stocks are ${watchlistPerformance > avgChange ? 'outperforming' : 'underperforming'} the general market with an average change of ${watchlistPerformance.toFixed(2)}% compared to the market average of ${avgChange.toFixed(2)}%.`;
+    }
+  }
+  
+  let portfolioContext = '';
+  if (portfolioSymbols.length > 0) {
+    const portfolioStocks = stocks.filter(stock => portfolioSymbols.includes(stock.symbol));
+    if (portfolioStocks.length > 0) {
+      const portfolioPerformance = portfolioStocks.reduce((sum, stock) => sum + stock.changePercent, 0) / portfolioStocks.length;
+      portfolioContext = `\nYour portfolio stocks are ${portfolioPerformance > avgChange ? 'outperforming' : 'underperforming'} the market today with an average change of ${portfolioPerformance.toFixed(2)}% compared to the market average of ${avgChange.toFixed(2)}%.`;
     }
   }
   
@@ -769,6 +897,7 @@ currently trading at NPR ${topGainer.price.toFixed(2)}.
 The biggest losing stock is ${topLoser.symbol} (${topLoser.name}) with a loss of ${Math.abs(topLoser.changePercent).toFixed(2)}%, 
 currently trading at NPR ${topLoser.price.toFixed(2)}.
 ${watchlistContext}
+${portfolioContext}
 
 Is there a specific sector or stock you'd like more information about?`;
 };

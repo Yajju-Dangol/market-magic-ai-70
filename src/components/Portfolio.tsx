@@ -1,38 +1,21 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-
-interface PortfolioStock {
-  symbol: string;
-  shares: number;
-  buyPrice: number;
-}
+import { usePortfolio } from '@/hooks/usePortfolio';
+import { PortfolioStock } from '@/utils/types';
 
 const Portfolio: React.FC = () => {
-  const [portfolio, setPortfolio] = useState<PortfolioStock[]>([]);
-  const [newStock, setNewStock] = useState({ symbol: '', shares: 0, buyPrice: 0 });
-  
-  useEffect(() => {
-    // Load portfolio from localStorage
-    const savedPortfolio = localStorage.getItem('portfolio');
-    if (savedPortfolio) {
-      try {
-        setPortfolio(JSON.parse(savedPortfolio));
-      } catch (error) {
-        console.error('Error loading portfolio:', error);
-      }
-    }
-  }, []);
-  
-  // Save portfolio to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('portfolio', JSON.stringify(portfolio));
-  }, [portfolio]);
+  const { portfolioItems, isLoading, addStock, removeStock, calculateTotalValue } = usePortfolio();
+  const [newStock, setNewStock] = useState<PortfolioStock>({ 
+    symbol: '', 
+    shares: 0, 
+    buyPrice: 0
+  });
   
   const handleAddStock = () => {
     if (!newStock.symbol || newStock.shares <= 0 || newStock.buyPrice <= 0) {
@@ -40,43 +23,17 @@ const Portfolio: React.FC = () => {
       return;
     }
     
-    // Check if stock already exists in portfolio
-    const existingIndex = portfolio.findIndex(
-      stock => stock.symbol.toUpperCase() === newStock.symbol.toUpperCase()
-    );
-    
-    if (existingIndex >= 0) {
-      // Update existing stock
-      const updatedPortfolio = [...portfolio];
-      updatedPortfolio[existingIndex] = {
-        ...updatedPortfolio[existingIndex],
-        shares: updatedPortfolio[existingIndex].shares + newStock.shares,
-        buyPrice: (updatedPortfolio[existingIndex].buyPrice + newStock.buyPrice) / 2
-      };
-      setPortfolio(updatedPortfolio);
-    } else {
-      // Add new stock
-      setPortfolio([...portfolio, {
-        symbol: newStock.symbol.toUpperCase(),
-        shares: newStock.shares,
-        buyPrice: newStock.buyPrice
-      }]);
-    }
+    addStock.mutate({ 
+      ...newStock, 
+      symbol: newStock.symbol.toUpperCase() 
+    });
     
     // Reset form
     setNewStock({ symbol: '', shares: 0, buyPrice: 0 });
-    toast.success('Stock added to portfolio');
   };
   
-  const handleRemoveStock = (index: number) => {
-    const updatedPortfolio = [...portfolio];
-    updatedPortfolio.splice(index, 1);
-    setPortfolio(updatedPortfolio);
-    toast.success('Stock removed from portfolio');
-  };
-  
-  const calculateTotalValue = () => {
-    return portfolio.reduce((total, stock) => total + (stock.shares * stock.buyPrice), 0);
+  const handleRemoveStock = (symbol: string) => {
+    removeStock.mutate(symbol);
   };
 
   return (
@@ -110,12 +67,25 @@ const Portfolio: React.FC = () => {
           onChange={(e) => setNewStock({ ...newStock, buyPrice: Number(e.target.value) })}
           className="flex-1"
         />
-        <Button onClick={handleAddStock} className="whitespace-nowrap">
-          <Plus className="mr-2 h-4 w-4" /> Add Stock
+        <Button 
+          onClick={handleAddStock} 
+          disabled={addStock.isPending}
+          className="whitespace-nowrap"
+        >
+          {addStock.isPending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Plus className="mr-2 h-4 w-4" />
+          )}
+          Add Stock
         </Button>
       </div>
       
-      {portfolio.length > 0 ? (
+      {isLoading ? (
+        <div className="flex justify-center items-center py-10">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : portfolioItems.length > 0 ? (
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -128,8 +98,8 @@ const Portfolio: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {portfolio.map((stock, index) => (
-                <TableRow key={index}>
+              {portfolioItems.map((stock) => (
+                <TableRow key={stock.symbol}>
                   <TableCell className="font-medium">{stock.symbol}</TableCell>
                   <TableCell>{stock.shares}</TableCell>
                   <TableCell>{stock.buyPrice.toFixed(2)}</TableCell>
@@ -138,10 +108,15 @@ const Portfolio: React.FC = () => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleRemoveStock(index)}
+                      onClick={() => handleRemoveStock(stock.symbol)}
+                      disabled={removeStock.isPending}
                       className="text-red-500 hover:text-red-700 hover:bg-red-100"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      {removeStock.isPending && removeStock.variables === stock.symbol ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
                     </Button>
                   </TableCell>
                 </TableRow>
