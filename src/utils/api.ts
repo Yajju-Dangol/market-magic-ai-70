@@ -1,6 +1,7 @@
 import { Stock, StockRecommendation, ApiResponse, MarketSummary } from './types';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const SCRAPE_TOKEN = import.meta.env.VITE_SCRAPE_DO_TOKEN || '';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
@@ -45,17 +46,14 @@ export const scrapeStockData = async (): Promise<ApiResponse> => {
       };
     }
 
-    // Parse the HTML data using Cheerio
     const stockData = parseStockData(response.data);
     
     if (stockData.length === 0) {
-      // If we couldn't parse the expected table, try to understand why
       const $ = cheerio.load(response.data);
       console.log('Page title:', $('title').text());
       console.log('Tables found:', $('table').length);
       console.log('First table classes:', $('table').first().attr('class'));
       
-      // Check for rate limiting or CloudFlare protection messages
       const bodyText = $('body').text().substring(0, 200);
       console.log('Body text excerpt:', bodyText);
       
@@ -88,22 +86,10 @@ const parseStockData = (htmlData: string): Stock[] => {
     const $ = cheerio.load(htmlData);
     const stockData: Stock[] = [];
     
-    // Output all tables and their classes for debugging
     console.log('All tables on the page:');
     $('table').each((i, table) => {
       console.log(`Table ${i}:`, $(table).attr('class'));
     });
-    
-    // Try different selectors that might match the stock table
-    const possibleSelectors = [
-      '.market-table',
-      'table.market-table',
-      'table.stock-table',
-      'table.data-table',
-      '.stock-data table',
-      '#market-data table',
-      'table',  // Fallback to any table
-    ];
     
     let marketTable;
     
@@ -121,32 +107,25 @@ const parseStockData = (htmlData: string): Stock[] => {
       return [];
     }
     
-    // Process rows (skip header)
     marketTable.find('tr').each((index, row) => {
-      // Skip header row
       if (index === 0) return;
       
       const cells = $(row).find('td');
       console.log(`Row ${index} has ${cells.length} cells`);
       
-      if (cells.length >= 4) { // Minimum required data
-        // Get text and clean it
+      if (cells.length >= 4) {
         const getCleanText = (cell: any) => $(cell).text().trim().replace(/\s+/g, ' ');
-        
-        // Try to parse values safely
         const safeParseFloat = (text: string) => {
           const cleaned = text.replace(/[^0-9.-]/g, '');
           const value = parseFloat(cleaned);
           return isNaN(value) ? 0 : value;
         };
-        
         const safeParseInt = (text: string) => {
           const cleaned = text.replace(/[^0-9]/g, '');
           const value = parseInt(cleaned);
           return isNaN(value) ? 0 : value;
         };
         
-        // Construct stock object with defensive parsing
         const stock: Stock = {
           symbol: getCleanText(cells[0]) || 'Unknown',
           name: getCleanText(cells.length > 1 ? cells[1] : cells[0]) || 'Unknown Company',
@@ -163,7 +142,6 @@ const parseStockData = (htmlData: string): Stock[] => {
         console.log('Parsed stock:', stock.symbol, stock.price);
         stockData.push(stock);
         
-        // Limit to 10 stocks for performance reasons
         if (stockData.length >= 10) return false;
       }
     });
@@ -187,7 +165,6 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
       throw new Error('No stock data available for recommendations');
     }
 
-    // Format stock data for the Gemini API
     const stocksData = stocks.map(stock => ({
       symbol: stock.symbol,
       name: stock.name,
@@ -203,7 +180,9 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
 
     console.log('Sending stock data to Gemini:', stocksData.length, 'stocks');
 
-    // Prepare the prompt for Gemini
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
     const prompt = `
       Based on the following stock market data from Nepal, provide trading recommendations for the top 3 most promising stocks.
       For each recommendation, specify whether to buy, sell, or hold, with a confidence level (0-100), 
@@ -213,58 +192,25 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
       Stock data: ${JSON.stringify(stocksData)}
     `;
 
-    // Call Gemini API using the correct API endpoint for the v1 API
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.0-pro:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }]
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    console.log('Gemini API response status:', response.status);
-
-    if (response.status !== 200) {
-      throw new Error(`Gemini API error: ${response.status}`);
-    }
-
-    // Parse Gemini response
-    const geminiResponse = response.data;
-    console.log('Gemini API response structure:', Object.keys(geminiResponse));
+    const result = await model.generateContent(prompt);
+    const response = await result.response.text();
     
-    if (
-      geminiResponse?.candidates?.[0]?.content?.parts?.[0]?.text
-    ) {
-      const textResponse = geminiResponse.candidates[0].content.parts[0].text;
-      console.log('Gemini text response (first 100 chars):', textResponse.substring(0, 100));
-      
-      // Extract JSON from the text response
-      const jsonMatch = textResponse.match(/\[\s*\{[\s\S]*\}\s*\]/);
-      if (jsonMatch) {
-        const jsonStr = jsonMatch[0];
-        try {
-          const recommendations = JSON.parse(jsonStr) as StockRecommendation[];
-          console.log('Parsed recommendations:', recommendations);
-          return recommendations;
-        } catch (e) {
-          console.error('Error parsing JSON from Gemini response:', e);
-          throw new Error('Failed to parse JSON from Gemini response');
-        }
-      } else {
-        console.error('JSON pattern not found in response:', textResponse);
-        throw new Error('No JSON array found in Gemini response');
+    console.log('Gemini API response (first 100 chars):', response.substring(0, 100));
+    
+    const jsonMatch = response.match(/\[\s*\{[\s\S]*\}\s*\]/);
+    if (jsonMatch) {
+      const jsonStr = jsonMatch[0];
+      try {
+        const recommendations = JSON.parse(jsonStr) as StockRecommendation[];
+        console.log('Parsed recommendations:', recommendations);
+        return recommendations;
+      } catch (e) {
+        console.error('Error parsing JSON from Gemini response:', e);
+        throw new Error('Failed to parse JSON from Gemini response');
       }
     } else {
-      console.error('Invalid Gemini response structure:', geminiResponse);
-      throw new Error('Invalid response format from Gemini API');
+      console.error('JSON pattern not found in response:', response);
+      throw new Error('No JSON array found in Gemini response');
     }
   } catch (error) {
     console.error('Error getting stock recommendations:', error);
@@ -275,8 +221,6 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
 // Function to get market insights using Gemini AI
 export const getMarketInsights = async (stocks: Stock[], userQuery: string): Promise<string> => {
   try {
-    const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
-    
     if (!GEMINI_API_KEY) {
       throw new Error('Gemini API key is missing');
     }
@@ -285,7 +229,6 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
       throw new Error('No stock data available for analysis');
     }
 
-    // Format stock data for the Gemini API
     const stocksData = stocks.map(stock => ({
       symbol: stock.symbol,
       name: stock.name,
@@ -301,7 +244,9 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
 
     console.log('Sending stock data to Gemini for insights:', stocksData.length, 'stocks');
 
-    // Prepare the prompt for Gemini
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
     const prompt = `
       You are a market expert AI assistant. Based on the following stock market data:
       ${JSON.stringify(stocksData)}
@@ -315,39 +260,9 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
       Be concise and informative.
     `;
 
-    // Call Gemini API
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.0-pro:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }]
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    if (response.status !== 200) {
-      throw new Error(`Gemini API error: ${response.status}`);
-    }
-
-    // Parse Gemini response
-    const geminiResponse = response.data;
-    
-    if (
-      geminiResponse?.candidates?.[0]?.content?.parts?.[0]?.text
-    ) {
-      const textResponse = geminiResponse.candidates[0].content.parts[0].text;
-      return textResponse;
-    } else {
-      console.error('Invalid Gemini response structure:', geminiResponse);
-      throw new Error('Invalid response format from Gemini API');
-    }
+    const result = await model.generateContent(prompt);
+    const response = await result.response.text();
+    return response;
   } catch (error) {
     console.error('Error getting market insights:', error);
     throw error;
