@@ -7,7 +7,7 @@ import StockRecommendation from '../components/StockRecommendation';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { scrapeStockData, getStockRecommendations } from '../utils/api';
 import { Stock, StockRecommendation as StockRecommendationType } from '../utils/types';
-import { toast } from '@/components/ui/sonner';
+import { toast } from 'sonner';
 
 const Index: React.FC = () => {
   const [stocks, setStocks] = useState<Stock[]>([]);
@@ -29,18 +29,30 @@ const Index: React.FC = () => {
         }
         
         const stocksData = stockResponse.data as Stock[];
+        if (!stocksData || stocksData.length === 0) {
+          throw new Error('No stock data available');
+        }
+        
         setStocks(stocksData);
         
         // Get AI recommendations based on the stock data
-        const recommendationsData = await getStockRecommendations(stocksData);
-        setRecommendations(recommendationsData);
+        try {
+          const recommendationsData = await getStockRecommendations(stocksData);
+          setRecommendations(recommendationsData);
+        } catch (recError) {
+          console.error('Error getting recommendations:', recError);
+          // We will still show the stocks even if recommendations fail
+          toast.error('Failed to load AI recommendations', {
+            description: 'Stock data was loaded successfully, but AI recommendations failed.',
+          });
+        }
         
         toast.success('Data loaded successfully', {
-          description: 'Stock data and recommendations have been updated.',
+          description: 'Stock data has been updated.',
         });
       } catch (err) {
         console.error('Error fetching data:', err);
-        setError('Failed to load data. Please try again later.');
+        setError(err instanceof Error ? err.message : 'Failed to load data. Please try again later.');
         toast.error('Failed to load data', {
           description: 'Please check your connection and try again.',
         });
