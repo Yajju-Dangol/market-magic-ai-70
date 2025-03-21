@@ -8,6 +8,7 @@ import RefreshButton from '../components/RefreshButton';
 import MarketStats from '../components/MarketStats';
 import Portfolio from '../components/Portfolio';
 import ChatInterface from '../components/ChatInterface';
+import Watchlist from '../components/Watchlist';
 import { scrapeStockData, getStockRecommendations } from '../utils/api';
 import { Stock, StockRecommendation as StockRecommendationType } from '../utils/types';
 import { toast } from 'sonner';
@@ -25,7 +26,6 @@ const Index: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      // Fetch stock data
       const stockResponse = await scrapeStockData();
       
       if (!stockResponse.success) {
@@ -40,13 +40,11 @@ const Index: React.FC = () => {
       setStocks(stocksData);
       setLastUpdated(new Date());
       
-      // Get AI recommendations based on the stock data
       try {
         const recommendationsData = await getStockRecommendations(stocksData);
         setRecommendations(recommendationsData);
       } catch (recError) {
         console.error('Error getting recommendations:', recError);
-        // We will still show the stocks even if recommendations fail
         toast.error('Failed to load AI recommendations', {
           description: 'Stock data was loaded successfully, but AI recommendations failed.',
         });
@@ -69,10 +67,8 @@ const Index: React.FC = () => {
   useEffect(() => {
     fetchData();
     
-    // Set up periodic refresh (every 5 minutes)
     const intervalId = setInterval(fetchData, 5 * 60 * 1000);
     
-    // Clean up interval on component unmount
     return () => clearInterval(intervalId);
   }, []);
 
@@ -89,7 +85,6 @@ const Index: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
-      {/* Background element */}
       <div className="absolute inset-0 z-0 overflow-hidden">
         <div className="absolute -top-24 -right-24 w-96 h-96 bg-blue-100 rounded-full blur-3xl opacity-40"></div>
         <div className="absolute top-1/2 -left-24 w-80 h-80 bg-cyan-100 rounded-full blur-3xl opacity-30"></div>
@@ -135,7 +130,6 @@ const Index: React.FC = () => {
             animate="visible"
             className="mt-6"
           >
-            {/* Header Section */}
             <motion.div 
               className="mb-8 flex flex-col md:flex-row justify-between items-center"
               initial={{ opacity: 0, y: 20 }}
@@ -153,19 +147,17 @@ const Index: React.FC = () => {
               <RefreshButton onRefresh={fetchData} isLoading={loading} />
             </motion.div>
             
-            {/* Market Stats Section */}
             <MarketStats stocks={stocks} />
             
-            {/* Main Content Tabs */}
             <Tabs defaultValue="market" className="mt-8">
-              <TabsList className="grid grid-cols-4 mb-6">
+              <TabsList className="grid grid-cols-5 mb-6">
                 <TabsTrigger value="market">Market</TabsTrigger>
+                <TabsTrigger value="watchlist">Watchlist</TabsTrigger>
                 <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
                 <TabsTrigger value="recommendations">AI Signals</TabsTrigger>
                 <TabsTrigger value="chat">AI Chat</TabsTrigger>
               </TabsList>
               
-              {/* Market Overview Tab */}
               <TabsContent value="market">
                 <motion.div 
                   className="glass-card p-6 rounded-xl"
@@ -183,12 +175,14 @@ const Index: React.FC = () => {
                 </motion.div>
               </TabsContent>
               
-              {/* Portfolio Tab */}
+              <TabsContent value="watchlist">
+                <Watchlist stocks={stocks} />
+              </TabsContent>
+              
               <TabsContent value="portfolio">
                 <Portfolio />
               </TabsContent>
               
-              {/* AI Signals Tab */}
               <TabsContent value="recommendations">
                 <motion.div 
                   className="glass-card p-6 rounded-xl"
@@ -223,7 +217,6 @@ const Index: React.FC = () => {
                 </motion.div>
               </TabsContent>
               
-              {/* AI Chat Tab */}
               <TabsContent value="chat">
                 <motion.div 
                   initial={{ opacity: 0 }}
@@ -238,7 +231,6 @@ const Index: React.FC = () => {
         )}
       </div>
       
-      {/* Footer */}
       <motion.footer 
         className="text-center py-8 text-sm text-muted-foreground mt-20"
         initial={{ opacity: 0 }}

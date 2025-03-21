@@ -1,7 +1,10 @@
-
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Stock } from '../utils/types';
+import { ArrowUpRight, ArrowDownRight, TrendingUp } from 'lucide-react';
+import { Stock } from '@/utils/types';
+import { cn } from '@/lib/utils';
+import WatchlistButton from './WatchlistButton';
+import { useWatchlist } from '@/hooks/useWatchlist';
 
 interface StockCardProps {
   stock: Stock;
@@ -9,60 +12,55 @@ interface StockCardProps {
 }
 
 const StockCard: React.FC<StockCardProps> = ({ stock, index }) => {
-  const isPositive = stock.change >= 0;
+  const { isInWatchlist } = useWatchlist();
+  const isWatched = isInWatchlist(stock.symbol);
   
   return (
-    <motion.div 
-      className="neo-card p-5 w-full"
+    <motion.div
+      className="bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow p-4 border border-gray-100 dark:border-gray-700"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.1, duration: 0.4 }}
-      whileHover={{ 
-        y: -5,
-        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.1)",
-        transition: { duration: 0.2 }
-      }}
+      transition={{ duration: 0.3, delay: index * 0.05 }}
     >
-      <div className="flex justify-between items-start mb-4">
+      <div className="flex justify-between items-start mb-2">
         <div>
-          <p className="text-xs font-medium text-muted-foreground">{stock.symbol}</p>
-          <h3 className="font-bold text-lg">{stock.name}</h3>
-        </div>
-        <div className={`px-2 py-1 rounded-full text-xs font-semibold ${isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-          {isPositive ? '↑' : '↓'} {Math.abs(stock.changePercent).toFixed(2)}%
-        </div>
-      </div>
-      
-      <div className="flex items-end justify-between">
-        <div>
-          <p className="text-2xl font-bold">{stock.price.toLocaleString()}</p>
-          <p className={`text-sm ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-            {isPositive ? '+' : ''}{stock.change.toFixed(2)}
+          <h3 className="font-bold text-lg">{stock.symbol}</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-[180px]" title={stock.name}>
+            {stock.name}
           </p>
         </div>
-        
-        <div className="text-right">
-          <p className="text-xs text-muted-foreground">Volume</p>
-          <p className="font-medium">{stock.volume.toLocaleString()}</p>
-        </div>
+        <WatchlistButton 
+          symbol={stock.symbol} 
+          name={stock.name} 
+          isInWatchlist={isWatched} 
+        />
       </div>
       
-      <div className="mt-4 pt-4 border-t grid grid-cols-2 gap-2 text-sm">
+      {/* Price and change */}
+      <div className="flex justify-between items-end mt-4">
         <div>
-          <p className="text-xs text-muted-foreground">Open</p>
-          <p className="font-medium">{stock.open?.toLocaleString() || '-'}</p>
+          <span className="text-2xl font-bold">${stock.price.toFixed(2)}</span>
+          <div className={cn(
+            "flex items-center mt-1",
+            stock.change > 0 ? "text-green-600 dark:text-green-500" : 
+            stock.change < 0 ? "text-red-600 dark:text-red-500" : 
+            "text-gray-500 dark:text-gray-400"
+          )}>
+            {stock.change > 0 ? (
+              <ArrowUpRight className="h-4 w-4 mr-1" />
+            ) : stock.change < 0 ? (
+              <ArrowDownRight className="h-4 w-4 mr-1" />
+            ) : (
+              <TrendingUp className="h-4 w-4 mr-1" />
+            )}
+            <span className="font-medium">
+              {stock.change > 0 ? "+" : ""}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+            </span>
+          </div>
         </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Prev Close</p>
-          <p className="font-medium">{stock.previousClose?.toLocaleString() || '-'}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">High</p>
-          <p className="font-medium">{stock.high?.toLocaleString() || '-'}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Low</p>
-          <p className="font-medium">{stock.low?.toLocaleString() || '-'}</p>
+        <div className="text-right">
+          <div className="text-xs text-gray-500 dark:text-gray-400">Volume</div>
+          <div className="font-medium">{stock.volume.toLocaleString()}</div>
         </div>
       </div>
     </motion.div>

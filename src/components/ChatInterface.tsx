@@ -1,12 +1,13 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, RefreshCw, FileSearch } from 'lucide-react';
+import { Send, Bot, User, RefreshCw, FileSearch, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Stock } from '@/utils/types';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { getMarketInsights, scrapeBrowserInteractions } from '@/utils/api';
+import { useWatchlist } from '@/hooks/useWatchlist';
 
 interface Message {
   id: string;
@@ -20,6 +21,7 @@ interface ChatInterfaceProps {
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
+  const { watchlistItems } = useWatchlist();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -57,8 +59,43 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
     setIsLoading(true);
     
     try {
+      // Check if the user is asking about their watchlist
+      if (inputMessage.toLowerCase().includes('watchlist') || 
+          inputMessage.toLowerCase().includes('watching') ||
+          inputMessage.toLowerCase().includes('my stocks')) {
+        
+        if (watchlistItems.length === 0) {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: 'Your watchlist is currently empty. You can add stocks to your watchlist by clicking the "Watch" button on any stock card in the Market or AI Signals tabs.',
+            timestamp: new Date(),
+          };
+          
+          setMessages(prev => [...prev, assistantMessage]);
+        } else {
+          // Filter stocks to only include those in the watchlist
+          const watchedStocks = stocks.filter(stock => 
+            watchlistItems.some(item => item.symbol === stock.symbol)
+          );
+          
+          // Create a message with watchlist information
+          const watchlistText = watchedStocks.map(stock => 
+            `${stock.symbol} (${stock.name}): $${stock.price.toFixed(2)} (${stock.change > 0 ? '+' : ''}${stock.changePercent.toFixed(2)}%)`
+          ).join('\n');
+          
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Here are the stocks in your watchlist:\n\n${watchlistText}\n\nWhat specific information would you like about these stocks?`,
+            timestamp: new Date(),
+          };
+          
+          setMessages(prev => [...prev, assistantMessage]);
+        }
+      }
       // Check if the user is asking to scrape or get fresh data
-      if (inputMessage.toLowerCase().includes('scrape') || 
+      else if (inputMessage.toLowerCase().includes('scrape') || 
           inputMessage.toLowerCase().includes('get data') || 
           inputMessage.toLowerCase().includes('fresh data') ||
           inputMessage.toLowerCase().includes('get latest') ||
@@ -91,7 +128,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
         setMessages(prev => [...prev, responseMessage]);
       } else {
         // Normal AI response for market insights
-        const response = await getMarketInsights(stocks, inputMessage);
+        // Include watchlist information in the query to make the AI aware of it
+        const watchlistInfo = watchlistItems.length > 0 
+          ? `The user has the following stocks in their watchlist: ${watchlistItems.map(item => item.symbol).join(', ')}.` 
+          : 'The user has no stocks in their watchlist.';
+        
+        const response = await getMarketInsights(stocks, `${watchlistInfo} ${inputMessage}`);
         
         // Add assistant message
         const assistantMessage: Message = {
@@ -136,6 +178,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
         <h2 className="text-xl font-bold flex items-center gap-2">
           <Bot size={20} /> Market AI Assistant
         </h2>
+        <div className="flex items-center mt-1 text-xs text-muted-foreground">
+          <List size={14} className="mr-1" />
+          <span>Watching {watchlistItems.length} stocks</span>
+        </div>
       </div>
       
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -181,7 +227,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
       <div className="p-4 border-t bg-background">
         <div className="flex gap-2">
           <Textarea
-            placeholder="Ask about market trends, stock analysis, or investment ideas. Try 'Scrape latest data'..."
+            placeholder="Ask about market trends, your watchlist, or investment ideas. Try 'Show my watchlist'..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyDown={handleKeyPress}
@@ -200,7 +246,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
         <div className="mt-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <FileSearch size={12} />
-            Try asking: "Scrape latest stock data" or "Which stocks should I buy right now?"
+            Try asking: "What's in my watchlist?" or "Which stocks should I buy right now?"
           </span>
         </div>
       </div>

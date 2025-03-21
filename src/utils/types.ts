@@ -43,3 +43,11 @@ export interface MarketSummary {
   topGainer: Stock | null;
   topLoser: Stock | null;
 }
+
+export interface WatchlistItem {
+  id: string;
+  user_id: string;
+  symbol: string;
+  name: string;
+  added_at: string;
+}

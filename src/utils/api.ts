@@ -1,8 +1,8 @@
-
 import { Stock, StockRecommendation, ApiResponse, MarketSummary } from './types';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { supabase } from '@/integrations/supabase/client';
 
 const SCRAPE_TOKEN = import.meta.env.VITE_SCRAPE_DO_TOKEN || '';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
@@ -474,14 +474,36 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
       open: stock.open,
       previousClose: stock.previousClose
     }));
+    
+    // Try to get watchlist data
+    let watchlistSymbols: string[] = [];
+    try {
+      const { data } = await supabase
+        .from('watchlists')
+        .select('symbol')
+        .eq('user_id', '00000000-0000-0000-0000-000000000000');
+      
+      if (data) {
+        watchlistSymbols = data.map(item => item.symbol);
+      }
+    } catch (error) {
+      console.error('Error fetching watchlist:', error);
+      // Continue without watchlist data
+    }
 
     console.log('Sending stock data to Gemini:', stocksData.length, 'stocks');
+    console.log('User watchlist symbols:', watchlistSymbols);
 
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
+    const watchlistContext = watchlistSymbols.length > 0 
+      ? `The user is watching the following stocks: ${watchlistSymbols.join(', ')}. Give these stocks special consideration in your recommendations.` 
+      : '';
+
     const prompt = `
       Based on the following stock market data from Nepal, provide trading recommendations for the top 3 most promising stocks.
+      ${watchlistContext}
       For each recommendation, specify whether to buy, sell, or hold, with a confidence level (0-100), 
       a brief reason for the recommendation, and a timeframe (short, medium, or long).
       Return the response in a JSON format with an array of objects containing symbol, action, confidence, reason, and timeFrame.
@@ -504,12 +526,12 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
       } catch (e) {
         console.error('Error parsing JSON from Gemini response:', e);
         // Return mock recommendations on error
-        return generateMockRecommendations(stocks);
+        return generateMockRecommendations(stocks, watchlistSymbols);
       }
     } else {
       console.error('JSON pattern not found in response:', response);
       // Return mock recommendations on error
-      return generateMockRecommendations(stocks);
+      return generateMockRecommendations(stocks, watchlistSymbols);
     }
   } catch (error) {
     console.error('Error getting stock recommendations:', error);
@@ -519,15 +541,38 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
 };
 
 // Function to generate mock recommendations
-const generateMockRecommendations = (stocks: Stock[]): StockRecommendation[] => {
-  // Sort stocks by change percent to find top performers
-  const sortedStocks = [...stocks].sort((a, b) => b.changePercent - a.changePercent);
-  const topStocks = sortedStocks.slice(0, 3);
+const generateMockRecommendations = (stocks: Stock[], watchlistSymbols: string[] = []): StockRecommendation[] => {
+  // First prioritize watchlist stocks if available
+  let candidateStocks = [...stocks];
+  let watchlistStocks: Stock[] = [];
+  
+  if (watchlistSymbols.length > 0) {
+    watchlistStocks = stocks.filter(stock => watchlistSymbols.includes(stock.symbol));
+    
+    // If we have watchlist stocks, use them first, then fill with top performers
+    if (watchlistStocks.length > 0) {
+      // Remove watchlist stocks from candidates to avoid duplicates
+      candidateStocks = candidateStocks.filter(stock => !watchlistSymbols.includes(stock.symbol));
+      // Sort the remaining by performance
+      candidateStocks.sort((a, b) => b.changePercent - a.changePercent);
+      
+      // Combine watchlist stocks with top performers to get 3 recommendations
+      candidateStocks = [...watchlistStocks, ...candidateStocks].slice(0, 3);
+    } else {
+      // If no watchlist stocks were found, just sort by performance
+      candidateStocks.sort((a, b) => b.changePercent - a.changePercent);
+      candidateStocks = candidateStocks.slice(0, 3);
+    }
+  } else {
+    // No watchlist, just sort by performance
+    candidateStocks.sort((a, b) => b.changePercent - a.changePercent);
+    candidateStocks = candidateStocks.slice(0, 3);
+  }
   
   const timeFrames: Array<'short' | 'medium' | 'long'> = ['short', 'medium', 'long'];
   const actions: Array<'buy' | 'sell' | 'hold'> = ['buy', 'sell', 'hold'];
   
-  return topStocks.map((stock, index) => {
+  return candidateStocks.map((stock, index) => {
     // Determine action based on change percent
     let action: 'buy' | 'sell' | 'hold';
     if (stock.changePercent > 1) {
@@ -538,12 +583,17 @@ const generateMockRecommendations = (stocks: Stock[]): StockRecommendation[] => 
       action = 'hold';
     }
     
+    // Add extra context for watchlist stocks
+    const watchlistContext = watchlistSymbols.includes(stock.symbol) 
+      ? ' This stock is in your watchlist.' 
+      : '';
+    
     // Generate mock recommendations
     return {
       symbol: stock.symbol,
       action: action,
       confidence: Math.floor(60 + Math.random() * 30), // 60-90
-      reason: `${action === 'buy' ? 'Positive momentum' : action === 'sell' ? 'Negative trend' : 'Stable performance'} with ${stock.changePercent.toFixed(2)}% change. Volume is ${stock.volume} which indicates ${stock.volume > 100000 ? 'strong' : 'moderate'} market interest.`,
+      reason: `${action === 'buy' ? 'Positive momentum' : action === 'sell' ? 'Negative trend' : 'Stable performance'} with ${stock.changePercent.toFixed(2)}% change. Volume is ${stock.volume} which indicates ${stock.volume > 100000 ? 'strong' : 'moderate'} market interest.${watchlistContext}`,
       timeFrame: timeFrames[index % timeFrames.length]
     };
   });
@@ -572,6 +622,27 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
       open: stock.open,
       previousClose: stock.previousClose
     }));
+    
+    // Try to get watchlist data
+    let watchlistItems: any[] = [];
+    try {
+      const { data } = await supabase
+        .from('watchlists')
+        .select('*')
+        .eq('user_id', '00000000-0000-0000-0000-000000000000');
+      
+      if (data) {
+        watchlistItems = data;
+      }
+    } catch (error) {
+      console.error('Error fetching watchlist:', error);
+      // Continue without watchlist data
+    }
+    
+    // Create a string with watchlist stocks for the AI
+    const watchlistContext = watchlistItems.length > 0
+      ? `The user has the following stocks in their watchlist: ${watchlistItems.map(item => item.symbol).join(', ')}.`
+      : 'The user has no stocks in their watchlist.';
 
     console.log('Sending stock data to Gemini for insights:', stocksData.length, 'stocks');
 
@@ -582,10 +653,13 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
       You are a market expert AI assistant. Based on the following stock market data:
       ${JSON.stringify(stocksData)}
       
+      ${watchlistContext}
+      
       Respond to the user's query: "${userQuery}"
       
       Provide detailed analysis, insights, and clear explanations. If the user asks about 
       specific stocks, analyze those stocks from the provided data.
+      If the user mentions their watchlist or watched stocks, focus your analysis on those stocks.
       Focus on the provided stock data, but you can also use your general knowledge 
       about markets and investment principles to provide context and explanation.
       Be concise and informative.
@@ -595,7 +669,7 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
     const response = await result.response.text();
     
     if (!response || response.trim() === '') {
-      return generateMockInsight(userQuery, stocks);
+      return generateMockInsight(userQuery, stocks, watchlistItems.map(item => item.symbol));
     }
     
     return response;
@@ -607,8 +681,42 @@ export const getMarketInsights = async (stocks: Stock[], userQuery: string): Pro
 };
 
 // Generate mock insights when the API fails
-const generateMockInsight = (query: string, stocks: Stock[]): string => {
+const generateMockInsight = (query: string, stocks: Stock[], watchlistSymbols: string[] = []): string => {
   const lowerQuery = query.toLowerCase();
+  
+  // Check if the query is about the watchlist
+  if (lowerQuery.includes('watchlist') || lowerQuery.includes('watching') || lowerQuery.includes('my stocks')) {
+    if (watchlistSymbols.length === 0) {
+      return `You don't have any stocks in your watchlist yet. You can add stocks to your watchlist by clicking the "Watch" button on any stock card in the Market tab or AI Signals tab.`;
+    }
+    
+    const watchedStocks = stocks.filter(stock => watchlistSymbols.includes(stock.symbol));
+    
+    if (watchedStocks.length === 0) {
+      return `You have ${watchlistSymbols.length} stocks in your watchlist, but I couldn't find current data for them in the available market information.`;
+    }
+    
+    const performingSummary = watchedStocks.filter(s => s.changePercent > 0).length > watchedStocks.length / 2
+      ? 'Most of your watched stocks are performing well today.'
+      : 'Most of your watched stocks are experiencing downward movement today.';
+    
+    const bestPerformer = [...watchedStocks].sort((a, b) => b.changePercent - a.changePercent)[0];
+    const worstPerformer = [...watchedStocks].sort((a, b) => a.changePercent - b.changePercent)[0];
+    
+    return `
+Here's an analysis of your watchlist:
+
+You are currently watching ${watchedStocks.length} stocks. ${performingSummary}
+
+Your best performing watched stock is ${bestPerformer.symbol} (${bestPerformer.name}) with a ${bestPerformer.changePercent > 0 ? 'gain' : 'loss'} of ${Math.abs(bestPerformer.changePercent).toFixed(2)}%, currently trading at NPR ${bestPerformer.price.toFixed(2)}.
+
+Your weakest performing watched stock is ${worstPerformer.symbol} (${worstPerformer.name}) with a ${worstPerformer.changePercent > 0 ? 'gain' : 'loss'} of ${Math.abs(worstPerformer.changePercent).toFixed(2)}%, currently trading at NPR ${worstPerformer.price.toFixed(2)}.
+
+${watchedStocks.length > 2 ? `Other stocks in your watchlist: ${watchedStocks.filter(s => s.symbol !== bestPerformer.symbol && s.symbol !== worstPerformer.symbol).map(s => `${s.symbol} at NPR ${s.price.toFixed(2)} (${s.changePercent > 0 ? '+' : ''}${s.changePercent.toFixed(2)}%)`).join(', ')}.` : ''}
+
+Would you like more detailed analysis on any specific stock in your watchlist?
+`;
+  }
   
   // Check if the query is about a specific stock
   const mentionedStock = stocks.find(stock => 
@@ -617,6 +725,8 @@ const generateMockInsight = (query: string, stocks: Stock[]): string => {
   );
   
   if (mentionedStock) {
+    const isWatched = watchlistSymbols.includes(mentionedStock.symbol);
+    
     return `
 Based on the current market data, ${mentionedStock.symbol} (${mentionedStock.name}) is trading at NPR ${mentionedStock.price.toFixed(2)} with a ${mentionedStock.change > 0 ? 'gain' : 'loss'} of ${Math.abs(mentionedStock.changePercent).toFixed(2)}%.
 
@@ -625,6 +735,8 @@ The stock has a daily trading volume of ${mentionedStock.volume.toLocaleString()
 ${mentionedStock.changePercent > 2 ? 'This stock is showing strong bullish momentum and might be worth considering for short-term investment opportunities.' : 
   mentionedStock.changePercent < -2 ? 'This stock is showing bearish trends. It might be wise to wait for signs of reversal before considering investment.' :
   'The stock is showing relatively stable performance in the current market conditions.'}
+
+${isWatched ? `This stock is currently in your watchlist.` : `You are not currently watching this stock. You can add it to your watchlist by clicking the "Watch" button on its stock card.`}
 
 Remember that all investment decisions should be based on comprehensive analysis and align with your overall investment strategy.
 `;
@@ -637,19 +749,15 @@ Remember that all investment decisions should be based on comprehensive analysis
   const topGainer = [...stocks].sort((a, b) => b.changePercent - a.changePercent)[0];
   const topLoser = [...stocks].sort((a, b) => a.changePercent - b.changePercent)[0];
   
+  // Watchlist context for general market overview
+  let watchlistContext = '';
+  if (watchlistSymbols.length > 0) {
+    const watchedStocks = stocks.filter(stock => watchlistSymbols.includes(stock.symbol));
+    if (watchedStocks.length > 0) {
+      const watchlistPerformance = watchedStocks.reduce((sum, stock) => sum + stock.changePercent, 0) / watchedStocks.length;
+      watchlistContext = `\nRegarding your watchlist: Your watched stocks are ${watchlistPerformance > avgChange ? 'outperforming' : 'underperforming'} the general market with an average change of ${watchlistPerformance.toFixed(2)}% compared to the market average of ${avgChange.toFixed(2)}%.`;
+    }
+  }
+  
   return `
-Based on the current market data, the overall market is showing a ${avgChange > 0 ? 'positive' : 'negative'} trend with an average change of ${Math.abs(avgChange).toFixed(2)}%.
-
-Out of the analyzed stocks, ${gainers} are showing gains while ${losers} are in negative territory. 
-
-The top performing stock is ${topGainer.symbol} (${topGainer.name}) with a gain of ${topGainer.changePercent.toFixed(2)}%, currently trading at NPR ${topGainer.price.toFixed(2)}.
-
-The weakest performer is ${topLoser.symbol} (${topLoser.name}) with a change of ${topLoser.changePercent.toFixed(2)}%, currently trading at NPR ${topLoser.price.toFixed(2)}.
-
-${avgChange > 1 ? 'The market is showing bullish sentiment today. This could be a good opportunity to look for strong stocks with upward momentum.' :
-  avgChange < -1 ? 'The market is showing bearish sentiment today. It might be wise to be cautious with new positions and focus on stocks showing relative strength.' :
-  'The market is showing mixed signals today. Consider focusing on specific sectors or stocks that demonstrate strength against the broader market.'}
-
-Remember that all investment decisions should be based on comprehensive analysis and align with your overall investment strategy.
-`;
-};
+Based on the current market data, the overall market is showing a ${avgChange > 0 ?
