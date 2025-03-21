@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Header from '../components/Header';
@@ -8,6 +7,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import RefreshButton from '../components/RefreshButton';
 import MarketStats from '../components/MarketStats';
 import Portfolio from '../components/Portfolio';
+import ChatInterface from '../components/ChatInterface';
 import { scrapeStockData, getStockRecommendations } from '../utils/api';
 import { Stock, StockRecommendation as StockRecommendationType } from '../utils/types';
 import { toast } from 'sonner';
@@ -158,10 +158,11 @@ const Index: React.FC = () => {
             
             {/* Main Content Tabs */}
             <Tabs defaultValue="market" className="mt-8">
-              <TabsList className="grid grid-cols-3 mb-6">
+              <TabsList className="grid grid-cols-4 mb-6">
                 <TabsTrigger value="market">Market</TabsTrigger>
                 <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
                 <TabsTrigger value="recommendations">AI Signals</TabsTrigger>
+                <TabsTrigger value="chat">AI Chat</TabsTrigger>
               </TabsList>
               
               {/* Market Overview Tab */}
@@ -219,6 +220,17 @@ const Index: React.FC = () => {
                       </div>
                     )}
                   </div>
+                </motion.div>
+              </TabsContent>
+              
+              {/* AI Chat Tab */}
+              <TabsContent value="chat">
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <ChatInterface stocks={stocks} />
                 </motion.div>
               </TabsContent>
             </Tabs>

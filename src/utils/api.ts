@@ -1,5 +1,4 @@
-
-import { Stock, StockRecommendation, ApiResponse } from './types';
+import { Stock, StockRecommendation, ApiResponse, MarketSummary } from './types';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 
@@ -269,6 +268,88 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
     }
   } catch (error) {
     console.error('Error getting stock recommendations:', error);
+    throw error;
+  }
+};
+
+// Function to get market insights using Gemini AI
+export const getMarketInsights = async (stocks: Stock[], userQuery: string): Promise<string> => {
+  try {
+    const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+    
+    if (!GEMINI_API_KEY) {
+      throw new Error('Gemini API key is missing');
+    }
+    
+    if (!stocks || stocks.length === 0) {
+      throw new Error('No stock data available for analysis');
+    }
+
+    // Format stock data for the Gemini API
+    const stocksData = stocks.map(stock => ({
+      symbol: stock.symbol,
+      name: stock.name,
+      price: stock.price,
+      change: stock.change,
+      changePercent: stock.changePercent,
+      volume: stock.volume,
+      high: stock.high,
+      low: stock.low,
+      open: stock.open,
+      previousClose: stock.previousClose
+    }));
+
+    console.log('Sending stock data to Gemini for insights:', stocksData.length, 'stocks');
+
+    // Prepare the prompt for Gemini
+    const prompt = `
+      You are a market expert AI assistant. Based on the following stock market data:
+      ${JSON.stringify(stocksData)}
+      
+      Respond to the user's query: "${userQuery}"
+      
+      Provide detailed analysis, insights, and clear explanations. If the user asks about 
+      specific stocks, analyze those stocks from the provided data.
+      Focus on the provided stock data, but you can also use your general knowledge 
+      about markets and investment principles to provide context and explanation.
+      Be concise and informative.
+    `;
+
+    // Call Gemini API
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.0-pro:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }]
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (response.status !== 200) {
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
+
+    // Parse Gemini response
+    const geminiResponse = response.data;
+    
+    if (
+      geminiResponse?.candidates?.[0]?.content?.parts?.[0]?.text
+    ) {
+      const textResponse = geminiResponse.candidates[0].content.parts[0].text;
+      return textResponse;
+    } else {
+      console.error('Invalid Gemini response structure:', geminiResponse);
+      throw new Error('Invalid response format from Gemini API');
+    }
+  } catch (error) {
+    console.error('Error getting market insights:', error);
     throw error;
   }
 };
