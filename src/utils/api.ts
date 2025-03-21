@@ -2,8 +2,8 @@
 import { Stock, StockRecommendation, ApiResponse } from './types';
 import axios from 'axios';
 
-const SCRAPE_TOKEN = process.env.VITE_SCRAPE_DO_TOKEN || '';
-const GEMINI_API_KEY = process.env.VITE_GEMINI_API_KEY || '';
+const SCRAPE_TOKEN = import.meta.env.VITE_SCRAPE_DO_TOKEN || '';
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 const TARGET_URL = 'https://www.nepsetrading.com/market/stocks';
 
 // Function to scrape stock data
@@ -37,11 +37,85 @@ export const scrapeStockData = async (): Promise<ApiResponse> => {
 
 // Function to parse the HTML and extract stock data
 const parseStockData = (htmlData: string): Stock[] => {
-  // This is a simplified example parser
-  // In a real implementation, you would use a library like Cheerio to parse the HTML
-  // For now, we'll return mock data
-  
-  // Mock data for development
+  try {
+    // Basic parsing for demo purposes
+    // In a production environment, you would use a library like Cheerio
+    const stockData: Stock[] = [];
+    
+    // Check if we have actual HTML data
+    if (htmlData && typeof htmlData === 'string') {
+      console.log('HTML data received, length:', htmlData.length);
+      
+      // Extract table data - this is a simplified example
+      // Actual implementation would need to be adjusted based on the website structure
+      const tableRegex = /<table[^>]*class="[^"]*market-table[^"]*"[^>]*>([\s\S]*?)<\/table>/i;
+      const tableMatch = htmlData.match(tableRegex);
+      
+      if (tableMatch && tableMatch[1]) {
+        const tableContent = tableMatch[1];
+        console.log('Found market table, extracting data...');
+        
+        // Extract rows
+        const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+        let rowMatch;
+        let rowCount = 0;
+        
+        while ((rowMatch = rowRegex.exec(tableContent)) !== null && rowCount < 10) {
+          // Skip header row
+          if (rowCount > 0) {
+            const rowContent = rowMatch[1];
+            
+            // Extract cells
+            const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+            const cells: string[] = [];
+            let cellMatch;
+            
+            while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
+              // Clean up the cell content (remove HTML tags)
+              const cellContent = cellMatch[1].replace(/<[^>]*>/g, '').trim();
+              cells.push(cellContent);
+            }
+            
+            // Create stock object if we have enough cells
+            if (cells.length >= 6) {
+              const stock: Stock = {
+                symbol: cells[0] || 'Unknown',
+                name: cells[1] || 'Unknown Company',
+                price: parseFloat(cells[2]) || 0,
+                change: parseFloat(cells[3]) || 0,
+                changePercent: parseFloat(cells[4]) || 0,
+                volume: parseInt(cells[5].replace(/,/g, '')) || 0,
+                high: parseFloat(cells[6]) || 0,
+                low: parseFloat(cells[7]) || 0,
+                open: parseFloat(cells[8]) || 0,
+                previousClose: parseFloat(cells[9]) || 0
+              };
+              
+              stockData.push(stock);
+            }
+          }
+          
+          rowCount++;
+        }
+      }
+    }
+    
+    // Return parsed data or fallback to mock data if parsing failed
+    if (stockData.length > 0) {
+      console.log('Successfully parsed', stockData.length, 'stocks');
+      return stockData;
+    } else {
+      console.warn('Parsing failed, returning mock data');
+      return getMockStockData();
+    }
+  } catch (error) {
+    console.error('Error parsing HTML:', error);
+    return getMockStockData();
+  }
+};
+
+// Fallback mock data
+const getMockStockData = (): Stock[] => {
   return [
     {
       symbol: "NABIL",
@@ -109,7 +183,7 @@ const parseStockData = (htmlData: string): Stock[] => {
 // Function to get stock recommendations using Gemini AI
 export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRecommendation[]> => {
   try {
-    // Format stock data for the API
+    // Format stock data for the Gemini API
     const stocksData = stocks.map(stock => ({
       symbol: stock.symbol,
       name: stock.name,
@@ -117,39 +191,93 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
       change: stock.change,
       changePercent: stock.changePercent,
       volume: stock.volume,
+      high: stock.high,
+      low: stock.low,
+      open: stock.open,
+      previousClose: stock.previousClose
     }));
 
-    // In a production environment, this would call Gemini API
-    // For now, we're mocking the response
-    
-    // Mock recommendation data for development
-    const mockRecommendations: StockRecommendation[] = [
-      {
-        symbol: "NABIL",
-        action: "buy",
-        confidence: 85,
-        reason: "Strong financials, positive momentum, and upcoming dividend announcement make NABIL an attractive buy option for short-term gains.",
-        timeFrame: "short"
-      },
-      {
-        symbol: "NICA",
-        action: "hold",
-        confidence: 70,
-        reason: "While showing positive growth, current market conditions suggest holding NICA until clearer directional signals emerge.",
-        timeFrame: "medium"
-      },
-      {
-        symbol: "NRIC",
-        action: "buy",
-        confidence: 80,
-        reason: "Consistently strong performance and recent institutional buying indicate significant upside potential for NRIC in the coming weeks.",
-        timeFrame: "short"
-      }
-    ];
+    // Prepare the prompt for Gemini
+    const prompt = `
+      Based on the following stock market data from Nepal, provide trading recommendations for the top 3 most promising stocks.
+      For each recommendation, specify whether to buy, sell, or hold, with a confidence level (0-100), 
+      a brief reason for the recommendation, and a timeframe (short, medium, or long).
+      Return the response in a JSON format with an array of objects containing symbol, action, confidence, reason, and timeFrame.
+      
+      Stock data: ${JSON.stringify(stocksData)}
+    `;
 
-    return mockRecommendations;
+    // Call Gemini API
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }]
+      }
+    );
+
+    if (response.status !== 200) {
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
+
+    // Parse Gemini response
+    const geminiResponse = response.data;
+    console.log('Gemini API response:', geminiResponse);
+    
+    if (
+      geminiResponse?.candidates?.[0]?.content?.parts?.[0]?.text
+    ) {
+      const textResponse = geminiResponse.candidates[0].content.parts[0].text;
+      
+      // Extract JSON from the text response
+      const jsonMatch = textResponse.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (jsonMatch) {
+        const jsonStr = jsonMatch[0];
+        try {
+          const recommendations = JSON.parse(jsonStr) as StockRecommendation[];
+          console.log('Parsed recommendations:', recommendations);
+          return recommendations;
+        } catch (e) {
+          console.error('Error parsing JSON from Gemini response:', e);
+        }
+      }
+    }
+    
+    // Fallback to mock data if parsing failed
+    console.warn('Failed to parse Gemini response, using mock data');
+    return getMockRecommendations();
   } catch (error) {
-    console.error('Error getting recommendations:', error);
-    return [];
+    console.error('Error getting stock recommendations:', error);
+    return getMockRecommendations();
   }
+};
+
+// Fallback mock recommendations
+const getMockRecommendations = (): StockRecommendation[] => {
+  return [
+    {
+      symbol: "NABIL",
+      action: "buy",
+      confidence: 85,
+      reason: "Strong financials, positive momentum, and upcoming dividend announcement make NABIL an attractive buy option for short-term gains.",
+      timeFrame: "short"
+    },
+    {
+      symbol: "NICA",
+      action: "hold",
+      confidence: 70,
+      reason: "While showing positive growth, current market conditions suggest holding NICA until clearer directional signals emerge.",
+      timeFrame: "medium"
+    },
+    {
+      symbol: "NRIC",
+      action: "buy",
+      confidence: 80,
+      reason: "Consistently strong performance and recent institutional buying indicate significant upside potential for NRIC in the coming weeks.",
+      timeFrame: "short"
+    }
+  ];
 };
