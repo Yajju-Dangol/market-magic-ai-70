@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ArrowUpRight, ArrowDownRight, TrendingUp } from 'lucide-react';
@@ -39,7 +40,7 @@ const StockCard: React.FC<StockCardProps> = ({ stock, index }) => {
       {/* Price and change */}
       <div className="flex justify-between items-end mt-4">
         <div>
-          <span className="text-2xl font-bold">${stock.price.toFixed(2)}</span>
+          <span className="text-2xl font-bold">NPR {stock.price.toFixed(2)}</span>
           <div className={cn(
             "flex items-center mt-1",
             stock.change > 0 ? "text-green-600 dark:text-green-500" : 

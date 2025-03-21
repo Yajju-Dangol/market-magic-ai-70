@@ -102,8 +102,8 @@ const Portfolio: React.FC = () => {
                 <TableRow key={stock.symbol}>
                   <TableCell className="font-medium">{stock.symbol}</TableCell>
                   <TableCell>{stock.shares}</TableCell>
-                  <TableCell>{stock.buyPrice.toFixed(2)}</TableCell>
-                  <TableCell>{(stock.shares * stock.buyPrice).toFixed(2)}</TableCell>
+                  <TableCell>NPR {stock.buyPrice.toFixed(2)}</TableCell>
+                  <TableCell>NPR {(stock.shares * stock.buyPrice).toFixed(2)}</TableCell>
                   <TableCell>
                     <Button
                       variant="ghost"
@@ -127,7 +127,7 @@ const Portfolio: React.FC = () => {
           <div className="mt-4 text-right">
             <p className="text-lg">
               <span className="text-muted-foreground">Total Portfolio Value:</span>{' '}
-              <span className="font-bold">{calculateTotalValue().toFixed(2)}</span>
+              <span className="font-bold">NPR {calculateTotalValue().toFixed(2)}</span>
             </p>
           </div>
         </div>

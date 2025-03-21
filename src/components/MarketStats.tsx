@@ -66,7 +66,7 @@ const MarketStats: React.FC<MarketStatsProps> = ({ stocks }) => {
           <div className="flex items-center gap-2 text-purple-600">
             <span className="font-medium">Avg. Price</span>
           </div>
-          <span className="text-xl font-bold">{averagePrice.toFixed(2)}</span>
+          <span className="text-xl font-bold">NPR {averagePrice.toFixed(2)}</span>
         </div>
       </div>
       

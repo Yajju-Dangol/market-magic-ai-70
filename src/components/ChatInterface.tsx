@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, RefreshCw, FileSearch, List, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -49,7 +48,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
     
-    // Add user message
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -62,7 +60,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
     setIsLoading(true);
     
     try {
-      // Check if the user is asking about their portfolio
       if (inputMessage.toLowerCase().includes('portfolio') || 
           inputMessage.toLowerCase().includes('my stocks') ||
           inputMessage.toLowerCase().includes('my holdings') ||
@@ -78,7 +75,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
           
           setMessages(prev => [...prev, assistantMessage]);
         } else {
-          // Get current prices for portfolio stocks if available
           const portfolioWithCurrentPrices = portfolioItems.map(portfolioStock => {
             const currentStockData = stocks.find(s => s.symbol === portfolioStock.symbol);
             return {
@@ -91,7 +87,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
             };
           });
           
-          // Calculate total value and gain/loss
           const totalInvestment = portfolioItems.reduce(
             (sum, stock) => sum + stock.shares * stock.buyPrice, 0
           );
@@ -103,33 +98,32 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
           const totalGainLoss = currentValue - totalInvestment;
           const totalGainLossPercent = (totalGainLoss / totalInvestment) * 100;
           
-          // Create a message with portfolio information
           let portfolioText = `Here's your current portfolio summary:\n\n`;
           
           portfolioWithCurrentPrices.forEach(stock => {
             const currentPriceText = stock.currentPrice 
-              ? `Current price: $${stock.currentPrice.toFixed(2)} (${stock.priceChangePercent && stock.priceChangePercent > 0 ? '+' : ''}${stock.priceChangePercent?.toFixed(2) || 'N/A'}%)` 
+              ? `Current price: NPR ${stock.currentPrice.toFixed(2)} (${stock.priceChangePercent && stock.priceChangePercent > 0 ? '+' : ''}${stock.priceChangePercent?.toFixed(2) || 'N/A'}%)` 
               : 'Current price not available';
               
-            portfolioText += `${stock.symbol}: ${stock.shares} shares at $${stock.buyPrice.toFixed(2)} per share. ${currentPriceText}\n`;
+            portfolioText += `${stock.symbol}: ${stock.shares} shares at NPR ${stock.buyPrice.toFixed(2)} per share. ${currentPriceText}\n`;
             
             if (stock.currentPrice) {
               const stockValue = stock.shares * stock.currentPrice;
               const stockCost = stock.shares * stock.buyPrice;
               const stockGainLoss = stockValue - stockCost;
-              portfolioText += `Total value: $${stockValue.toFixed(2)} (${stockGainLoss > 0 ? '+' : ''}$${stockGainLoss.toFixed(2)})\n`;
+              portfolioText += `Total value: NPR ${stockValue.toFixed(2)} (${stockGainLoss > 0 ? '+' : ''}NPR ${stockGainLoss.toFixed(2)})\n`;
             } else {
-              portfolioText += `Total cost: $${(stock.shares * stock.buyPrice).toFixed(2)}\n`;
+              portfolioText += `Total cost: NPR ${(stock.shares * stock.buyPrice).toFixed(2)}\n`;
             }
             
             portfolioText += `\n`;
           });
           
-          portfolioText += `Total portfolio cost: $${totalInvestment.toFixed(2)}\n`;
+          portfolioText += `Total portfolio cost: NPR ${totalInvestment.toFixed(2)}\n`;
           
           if (portfolioWithCurrentPrices.some(s => s.currentPrice)) {
-            portfolioText += `Current portfolio value: $${currentValue.toFixed(2)}\n`;
-            portfolioText += `Overall gain/loss: ${totalGainLoss > 0 ? '+' : ''}$${totalGainLoss.toFixed(2)} (${totalGainLossPercent > 0 ? '+' : ''}${totalGainLossPercent.toFixed(2)}%)\n`;
+            portfolioText += `Current portfolio value: NPR ${currentValue.toFixed(2)}\n`;
+            portfolioText += `Overall gain/loss: ${totalGainLoss > 0 ? '+' : ''}NPR ${totalGainLoss.toFixed(2)} (${totalGainLossPercent > 0 ? '+' : ''}${totalGainLossPercent.toFixed(2)}%)\n`;
           }
           
           const assistantMessage: Message = {
@@ -142,7 +136,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
           setMessages(prev => [...prev, assistantMessage]);
         }
       }
-      // Check if the user is asking about their watchlist
       else if (inputMessage.toLowerCase().includes('watchlist') || 
           inputMessage.toLowerCase().includes('watching')) {
         
@@ -156,14 +149,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
           
           setMessages(prev => [...prev, assistantMessage]);
         } else {
-          // Filter stocks to only include those in the watchlist
           const watchedStocks = stocks.filter(stock => 
             watchlistItems.some(item => item.symbol === stock.symbol)
           );
           
-          // Create a message with watchlist information
           const watchlistText = watchedStocks.map(stock => 
-            `${stock.symbol} (${stock.name}): $${stock.price.toFixed(2)} (${stock.change > 0 ? '+' : ''}${stock.changePercent.toFixed(2)}%)`
+            `${stock.symbol} (${stock.name}): NPR ${stock.price.toFixed(2)} (${stock.change > 0 ? '+' : ''}${stock.changePercent.toFixed(2)}%)`
           ).join('\n');
           
           const assistantMessage: Message = {
@@ -176,7 +167,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
           setMessages(prev => [...prev, assistantMessage]);
         }
       }
-      // Check if the user is asking to scrape or get fresh data
       else if (inputMessage.toLowerCase().includes('scrape') || 
           inputMessage.toLowerCase().includes('get data') || 
           inputMessage.toLowerCase().includes('fresh data') ||
@@ -184,7 +174,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
           inputMessage.toLowerCase().includes('update') ||
           inputMessage.toLowerCase().includes('latest stock')) {
         
-        // If user wants to scrape, use the browser interaction method
         const scrapingMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
@@ -197,7 +186,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
         const result = await scrapeBrowserInteractions();
         setIsScraping(false);
         
-        // Add response about scraping result
         const responseMessage: Message = {
           id: (Date.now() + 2).toString(),
           role: 'assistant',
@@ -209,8 +197,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
         
         setMessages(prev => [...prev, responseMessage]);
       } else {
-        // Normal AI response for market insights
-        // Include watchlist and portfolio information in the query to make the AI aware of them
         const watchlistInfo = watchlistItems.length > 0 
           ? `The user has the following stocks in their watchlist: ${watchlistItems.map(item => item.symbol).join(', ')}.` 
           : 'The user has no stocks in their watchlist.';
@@ -221,7 +207,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
         
         const response = await getMarketInsights(stocks, `${watchlistInfo} ${portfolioInfo} ${inputMessage}`);
         
-        // Add assistant message
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
@@ -237,7 +222,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
         description: 'Please try again later',
       });
       
-      // Add error message
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
