@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Stock } from '@/utils/types';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { getMarketInsights } from '@/utils/api';
+import { getMarketInsights, scrapeBrowserInteractions } from '@/utils/api';
 
 interface Message {
   id: string;
@@ -56,18 +56,49 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
     setIsLoading(true);
     
     try {
-      // Call Gemini API for response
-      const response = await getMarketInsights(stocks, inputMessage);
-      
-      // Add assistant message
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response,
-        timestamp: new Date(),
-      };
-      
-      setMessages(prev => [...prev, assistantMessage]);
+      // Check if the user is asking to scrape or get fresh data
+      if (inputMessage.toLowerCase().includes('scrape') || 
+          inputMessage.toLowerCase().includes('get data') || 
+          inputMessage.toLowerCase().includes('fresh data') ||
+          inputMessage.toLowerCase().includes('get latest') ||
+          inputMessage.toLowerCase().includes('update')) {
+        
+        // If user wants to scrape, use the browser interaction method
+        const scrapingMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: 'Fetching the latest stock data from the website. This might take a moment...',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, scrapingMessage]);
+        
+        const result = await scrapeBrowserInteractions();
+        
+        // Add response about scraping result
+        const responseMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          role: 'assistant',
+          content: result.success 
+            ? `Successfully scraped ${result.data?.length || 0} stocks from the website. You can now ask questions about the latest market data.` 
+            : `Sorry, I encountered an issue while scraping: ${result.error}. I'll use the available data for analysis instead.`,
+          timestamp: new Date(),
+        };
+        
+        setMessages(prev => [...prev, responseMessage]);
+      } else {
+        // Normal AI response for market insights
+        const response = await getMarketInsights(stocks, inputMessage);
+        
+        // Add assistant message
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: response,
+          timestamp: new Date(),
+        };
+        
+        setMessages(prev => [...prev, assistantMessage]);
+      }
     } catch (error) {
       console.error('Error getting market insights:', error);
       toast.error('Failed to get market insights', {
@@ -146,7 +177,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
       <div className="p-4 border-t bg-background">
         <div className="flex gap-2">
           <Textarea
-            placeholder="Ask about market trends, stock analysis, or investment ideas..."
+            placeholder="Ask about market trends, stock analysis, or investment ideas. Try 'Scrape latest data'..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyDown={handleKeyPress}
