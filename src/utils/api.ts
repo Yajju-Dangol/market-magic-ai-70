@@ -132,7 +132,7 @@ const parseStockData = (htmlData: string): Stock[] => {
       
       if (cells.length >= 4) { // Minimum required data
         // Get text and clean it
-        const getCleanText = (cell: cheerio.Element) => $(cell).text().trim().replace(/\s+/g, ' ');
+        const getCleanText = (cell: any) => $(cell).text().trim().replace(/\s+/g, ' ');
         
         // Try to parse values safely
         const safeParseFloat = (text: string) => {

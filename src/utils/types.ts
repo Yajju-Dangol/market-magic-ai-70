@@ -26,3 +26,20 @@ export interface ApiResponse {
   data?: any;
   error?: string;
 }
+
+export interface PortfolioStock {
+  symbol: string;
+  shares: number;
+  buyPrice: number;
+  purchaseDate?: string;
+}
+
+export interface MarketSummary {
+  gainers: number;
+  losers: number;
+  unchanged: number;
+  totalVolume: number;
+  averagePrice: number;
+  topGainer: Stock | null;
+  topLoser: Stock | null;
+}
