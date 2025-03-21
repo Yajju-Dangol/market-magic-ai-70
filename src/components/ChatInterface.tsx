@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, RefreshCw } from 'lucide-react';
+import { Send, Bot, User, RefreshCw, FileSearch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Stock } from '@/utils/types';
@@ -24,12 +24,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
     {
       id: '1',
       role: 'assistant',
-      content: 'Hello! I can help you analyze the current market data and provide insights. What would you like to know about the stocks?',
+      content: 'Hello! I can help you analyze the current market data and provide insights. What would you like to know about the stocks? You can also ask me to "scrape latest data" to get the most up-to-date information.',
       timestamp: new Date(),
     },
   ]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isScraping, setIsScraping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const scrollToBottom = () => {
@@ -61,7 +62,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
           inputMessage.toLowerCase().includes('get data') || 
           inputMessage.toLowerCase().includes('fresh data') ||
           inputMessage.toLowerCase().includes('get latest') ||
-          inputMessage.toLowerCase().includes('update')) {
+          inputMessage.toLowerCase().includes('update') ||
+          inputMessage.toLowerCase().includes('latest stock')) {
         
         // If user wants to scrape, use the browser interaction method
         const scrapingMessage: Message = {
@@ -71,15 +73,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, scrapingMessage]);
+        setIsScraping(true);
         
         const result = await scrapeBrowserInteractions();
+        setIsScraping(false);
         
         // Add response about scraping result
         const responseMessage: Message = {
           id: (Date.now() + 2).toString(),
           role: 'assistant',
           content: result.success 
-            ? `Successfully scraped ${result.data?.length || 0} stocks from the website. You can now ask questions about the latest market data.` 
+            ? `Successfully scraped ${result.data?.length || 0} stocks from the website. ${result.error ? `Note: ${result.error}` : ''} You can now ask questions about the latest market data.` 
             : `Sorry, I encountered an issue while scraping: ${result.error}. I'll use the available data for analysis instead.`,
           timestamp: new Date(),
         };
@@ -167,7 +171,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
             </div>
             <div className="flex items-center gap-2">
               <RefreshCw size={16} className="animate-spin" />
-              Analyzing market data...
+              {isScraping ? 'Scraping stock data from website...' : 'Analyzing market data...'}
             </div>
           </div>
         )}
@@ -188,9 +192,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
             onClick={handleSendMessage} 
             disabled={isLoading || !inputMessage.trim()}
             size="icon"
+            title="Send message"
           >
             <Send size={18} />
           </Button>
+        </div>
+        <div className="mt-2 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <FileSearch size={12} />
+            Try asking: "Scrape latest stock data" or "Which stocks should I buy right now?"
+          </span>
         </div>
       </div>
     </div>

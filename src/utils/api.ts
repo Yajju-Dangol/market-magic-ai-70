@@ -32,11 +32,26 @@ export const scrapeBrowserInteractions = async (): Promise<ApiResponse> => {
     
     const targetUrl = encodeURIComponent(TARGET_URL);
     
-    // Create browser interactions to handle potential popups, wait for table load, etc.
+    // Create more comprehensive browser interactions to navigate and extract all data
     const browserActions = [
-      { "Action": "Wait", "Timeout": 3000 }, // Wait for page to load
+      { "Action": "Wait", "Timeout": 3000 }, // Wait for initial page load
       { "Action": "ScrollY", "Value": 300 }, // Scroll down to view tables
-      { "Action": "WaitSelector", "WaitSelector": "table", "Timeout": 5000 } // Wait for tables to load
+      { "Action": "WaitSelector", "WaitSelector": "table", "Timeout": 5000 }, // Wait for tables to load
+      // Execute custom JavaScript to ensure all stock rows are loaded/visible
+      { "Action": "Execute", "Execute": `
+        // Try to click any "load more" or pagination buttons
+        const loadMoreBtn = document.querySelector('.load-more, .pagination button, button:contains("Load More")');
+        if (loadMoreBtn) loadMoreBtn.click();
+        
+        // Wait for new content to load
+        setTimeout(() => {
+          // Scroll to bottom to trigger lazy loading if present
+          window.scrollTo(0, document.body.scrollHeight);
+        }, 1000);
+      `},
+      { "Action": "Wait", "Timeout": 2000 }, // Wait for any dynamic content to load
+      { "Action": "ScrollY", "Value": 1000 }, // Scroll further down 
+      { "Action": "Wait", "Timeout": 1000 } // Final wait to ensure everything is loaded
     ];
     
     // Encode the browser actions
@@ -77,11 +92,65 @@ export const scrapeBrowserInteractions = async (): Promise<ApiResponse> => {
       // Log the HTML content for debugging
       console.log('HTML content snippet:', response.data.substring(0, 500));
       
-      // If no stock data found, create mock data for demonstration
+      // Try alternative parsing with executeJavaScript approach
+      try {
+        // Make another request with a JavaScript extraction approach
+        const extractScript = [
+          { "Action": "Wait", "Timeout": 3000 },
+          { "Action": "Execute", "Execute": `
+            const stockData = [];
+            const tableRows = document.querySelectorAll('table tr');
+            
+            for (let i = 1; i < tableRows.length; i++) {
+              const row = tableRows[i];
+              const cells = row.querySelectorAll('td');
+              
+              if (cells.length >= 4) {
+                const stock = {
+                  symbol: cells[0]?.textContent?.trim() || 'Unknown',
+                  name: (cells.length > 1 ? cells[1]?.textContent?.trim() : cells[0]?.textContent?.trim()) || 'Unknown',
+                  price: parseFloat((cells.length > 2 ? cells[2]?.textContent?.trim() : cells[1]?.textContent?.trim()).replace(/[^0-9.-]/g, '')) || 0,
+                  change: parseFloat((cells.length > 3 ? cells[3]?.textContent?.trim() : cells[2]?.textContent?.trim()).replace(/[^0-9.-]/g, '')) || 0
+                };
+                stockData.push(stock);
+              }
+            }
+            
+            return JSON.stringify(stockData);
+          `}
+        ];
+        
+        const jsExtractData = JSON.stringify(extractScript);
+        const encodedJsExtract = encodeURIComponent(jsExtractData);
+        
+        const extractResponse = await axios({
+          method: 'GET',
+          url: `https://api.scrape.do/?token=${SCRAPE_TOKEN}&url=${targetUrl}&render=true&playWithBrowser=${encodedJsExtract}&returnJSON=true`,
+        });
+        
+        if (extractResponse.data && extractResponse.data.execute_result) {
+          try {
+            const jsExtractedStocks = JSON.parse(extractResponse.data.execute_result);
+            if (jsExtractedStocks && jsExtractedStocks.length > 0) {
+              console.log('Successfully extracted stocks via JavaScript:', jsExtractedStocks.length);
+              return {
+                success: true,
+                data: jsExtractedStocks
+              };
+            }
+          } catch (parseErr) {
+            console.error('Error parsing JavaScript extraction result:', parseErr);
+          }
+        }
+      } catch (extractErr) {
+        console.error('Error with JavaScript extraction approach:', extractErr);
+      }
+      
+      // If still no data, use mock data
       return {
         success: true,
         data: generateMockStockData(),
-        message: 'Using mock data: Could not extract real stock data from the page'
+        error: 'Could not extract real stock data from the page. Using mock data instead.'
       };
     }
     
@@ -301,7 +370,7 @@ const parseStockData = (htmlData: string): Stock[] => {
     }
     
     marketTable.find('tr').each((index, row) => {
-      if (index === 0) return;
+      if (index === 0) return; // Skip header row
       
       const cells = $(row).find('td');
       console.log(`Row ${index} has ${cells.length} cells`);
@@ -334,10 +403,45 @@ const parseStockData = (htmlData: string): Stock[] => {
         
         console.log('Parsed stock:', stock.symbol, stock.price);
         stockData.push(stock);
-        
-        if (stockData.length >= 10) return false;
       }
     });
+    
+    // If we didn't get any stocks from the tables, try a more aggressive approach
+    if (stockData.length === 0) {
+      // Look for any elements that might contain stock information
+      // This is a fallback for sites with non-standard table structures
+      console.log('Trying alternative scraping approach...');
+      
+      $('div, tr, li').each((i, el) => {
+        const text = $(el).text().trim();
+        
+        // Look for patterns that might indicate stock data (symbol + price)
+        const symbolMatch = text.match(/([A-Z]{2,5})\s+[-+]?[0-9]*\.?[0-9]+/);
+        if (symbolMatch) {
+          const priceMatch = text.match(/[-+]?[0-9]*\.?[0-9]+/);
+          const changeMatch = text.match(/[+-][0-9]*\.?[0-9]+/);
+          
+          if (priceMatch) {
+            const stock: Stock = {
+              symbol: symbolMatch[1],
+              name: `${symbolMatch[1]} Stock`,
+              price: parseFloat(priceMatch[0]),
+              change: changeMatch ? parseFloat(changeMatch[0]) : 0,
+              changePercent: 0, // Can't reliably extract this
+              volume: 0, // Can't reliably extract this
+              high: 0,
+              low: 0,
+              open: 0,
+              previousClose: 0
+            };
+            
+            stockData.push(stock);
+            
+            if (stockData.length >= 20) return false; // Limit to 20 stocks
+          }
+        }
+      });
+    }
     
     console.log('Successfully parsed', stockData.length, 'stocks');
     return stockData;
