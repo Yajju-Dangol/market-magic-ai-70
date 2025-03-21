@@ -17,13 +17,20 @@ export const scrapeStockData = async (): Promise<ApiResponse> => {
       };
     }
 
+    console.log('Attempting to scrape data with token:', SCRAPE_TOKEN.substring(0, 5) + '...');
+    
     const targetUrl = encodeURIComponent(TARGET_URL);
     const response = await axios({
       method: 'GET',
       url: `https://api.scrape.do/?token=${SCRAPE_TOKEN}&url=${targetUrl}`,
-      headers: {}
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
     });
 
+    console.log('Response status:', response.status);
+    
     if (response.status !== 200) {
       return { 
         success: false, 
@@ -31,13 +38,31 @@ export const scrapeStockData = async (): Promise<ApiResponse> => {
       };
     }
 
+    if (typeof response.data !== 'string') {
+      console.log('Response data type:', typeof response.data);
+      return {
+        success: false,
+        error: 'Invalid response format: Expected HTML string'
+      };
+    }
+
     // Parse the HTML data using Cheerio
     const stockData = parseStockData(response.data);
     
     if (stockData.length === 0) {
+      // If we couldn't parse the expected table, try to understand why
+      const $ = cheerio.load(response.data);
+      console.log('Page title:', $('title').text());
+      console.log('Tables found:', $('table').length);
+      console.log('First table classes:', $('table').first().attr('class'));
+      
+      // Check for rate limiting or CloudFlare protection messages
+      const bodyText = $('body').text().substring(0, 200);
+      console.log('Body text excerpt:', bodyText);
+      
       return {
         success: false,
-        error: 'Failed to parse stock data from the response'
+        error: 'Failed to parse stock data from the response. The site structure may have changed or access may be restricted.'
       };
     }
     
@@ -64,11 +89,36 @@ const parseStockData = (htmlData: string): Stock[] => {
     const $ = cheerio.load(htmlData);
     const stockData: Stock[] = [];
     
-    // Find the market table - adjust selector based on actual page structure
-    const marketTable = $('.market-table');
+    // Output all tables and their classes for debugging
+    console.log('All tables on the page:');
+    $('table').each((i, table) => {
+      console.log(`Table ${i}:`, $(table).attr('class'));
+    });
     
-    if (marketTable.length === 0) {
-      console.error('Market table not found in HTML');
+    // Try different selectors that might match the stock table
+    const possibleSelectors = [
+      '.market-table',
+      'table.market-table',
+      'table.stock-table',
+      'table.data-table',
+      '.stock-data table',
+      '#market-data table',
+      'table',  // Fallback to any table
+    ];
+    
+    let marketTable;
+    
+    for (const selector of possibleSelectors) {
+      console.log(`Trying selector: ${selector}`);
+      marketTable = $(selector);
+      if (marketTable.length > 0) {
+        console.log(`Found table with selector: ${selector}`);
+        break;
+      }
+    }
+    
+    if (!marketTable || marketTable.length === 0) {
+      console.error('No tables found matching any selector');
       return [];
     }
     
@@ -78,21 +128,40 @@ const parseStockData = (htmlData: string): Stock[] => {
       if (index === 0) return;
       
       const cells = $(row).find('td');
+      console.log(`Row ${index} has ${cells.length} cells`);
       
-      if (cells.length >= 6) {
-        const stock: Stock = {
-          symbol: $(cells[0]).text().trim() || 'Unknown',
-          name: $(cells[1]).text().trim() || 'Unknown Company',
-          price: parseFloat($(cells[2]).text().trim()) || 0,
-          change: parseFloat($(cells[3]).text().trim()) || 0,
-          changePercent: parseFloat($(cells[4]).text().trim().replace('%', '')) || 0,
-          volume: parseInt($(cells[5]).text().trim().replace(/,/g, '')) || 0,
-          high: cells.length > 6 ? (parseFloat($(cells[6]).text().trim()) || 0) : 0,
-          low: cells.length > 7 ? (parseFloat($(cells[7]).text().trim()) || 0) : 0,
-          open: cells.length > 8 ? (parseFloat($(cells[8]).text().trim()) || 0) : 0,
-          previousClose: cells.length > 9 ? (parseFloat($(cells[9]).text().trim()) || 0) : 0
+      if (cells.length >= 4) { // Minimum required data
+        // Get text and clean it
+        const getCleanText = (cell: cheerio.Element) => $(cell).text().trim().replace(/\s+/g, ' ');
+        
+        // Try to parse values safely
+        const safeParseFloat = (text: string) => {
+          const cleaned = text.replace(/[^0-9.-]/g, '');
+          const value = parseFloat(cleaned);
+          return isNaN(value) ? 0 : value;
         };
         
+        const safeParseInt = (text: string) => {
+          const cleaned = text.replace(/[^0-9]/g, '');
+          const value = parseInt(cleaned);
+          return isNaN(value) ? 0 : value;
+        };
+        
+        // Construct stock object with defensive parsing
+        const stock: Stock = {
+          symbol: getCleanText(cells[0]) || 'Unknown',
+          name: getCleanText(cells.length > 1 ? cells[1] : cells[0]) || 'Unknown Company',
+          price: safeParseFloat(getCleanText(cells.length > 2 ? cells[2] : cells[1])),
+          change: safeParseFloat(getCleanText(cells.length > 3 ? cells[3] : cells[2])),
+          changePercent: safeParseFloat(getCleanText(cells.length > 4 ? cells[4] : cells[3])),
+          volume: safeParseInt(getCleanText(cells.length > 5 ? cells[5] : cells[4])),
+          high: cells.length > 6 ? safeParseFloat(getCleanText(cells[6])) : 0,
+          low: cells.length > 7 ? safeParseFloat(getCleanText(cells[7])) : 0,
+          open: cells.length > 8 ? safeParseFloat(getCleanText(cells[8])) : 0,
+          previousClose: cells.length > 9 ? safeParseFloat(getCleanText(cells[9])) : 0
+        };
+        
+        console.log('Parsed stock:', stock.symbol, stock.price);
         stockData.push(stock);
         
         // Limit to 10 stocks for performance reasons
@@ -133,6 +202,8 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
       previousClose: stock.previousClose
     }));
 
+    console.log('Sending stock data to Gemini:', stocksData.length, 'stocks');
+
     // Prepare the prompt for Gemini
     const prompt = `
       Based on the following stock market data from Nepal, provide trading recommendations for the top 3 most promising stocks.
@@ -152,8 +223,15 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
             text: prompt
           }]
         }]
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
       }
     );
+
+    console.log('Gemini API response status:', response.status);
 
     if (response.status !== 200) {
       throw new Error(`Gemini API error: ${response.status}`);
@@ -161,12 +239,13 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
 
     // Parse Gemini response
     const geminiResponse = response.data;
-    console.log('Gemini API response:', geminiResponse);
+    console.log('Gemini API response structure:', Object.keys(geminiResponse));
     
     if (
       geminiResponse?.candidates?.[0]?.content?.parts?.[0]?.text
     ) {
       const textResponse = geminiResponse.candidates[0].content.parts[0].text;
+      console.log('Gemini text response (first 100 chars):', textResponse.substring(0, 100));
       
       // Extract JSON from the text response
       const jsonMatch = textResponse.match(/\[\s*\{[\s\S]*\}\s*\]/);
@@ -181,9 +260,11 @@ export const getStockRecommendations = async (stocks: Stock[]): Promise<StockRec
           throw new Error('Failed to parse JSON from Gemini response');
         }
       } else {
+        console.error('JSON pattern not found in response:', textResponse);
         throw new Error('No JSON array found in Gemini response');
       }
     } else {
+      console.error('Invalid Gemini response structure:', geminiResponse);
       throw new Error('Invalid response format from Gemini API');
     }
   } catch (error) {
