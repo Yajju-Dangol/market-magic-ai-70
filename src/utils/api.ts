@@ -760,4 +760,15 @@ Remember that all investment decisions should be based on comprehensive analysis
   }
   
   return `
-Based on the current market data, the overall market is showing a ${avgChange > 0 ?
+Based on the current market data, the overall market is showing a ${avgChange > 0 ? 'positive' : 'negative'} trend with an average change of ${avgChange.toFixed(2)}%. 
+There are ${gainers} gainers and ${losers} losers among the tracked stocks.
+
+The top gaining stock is ${topGainer.symbol} (${topGainer.name}) with a gain of ${topGainer.changePercent.toFixed(2)}%, 
+currently trading at NPR ${topGainer.price.toFixed(2)}.
+
+The biggest losing stock is ${topLoser.symbol} (${topLoser.name}) with a loss of ${Math.abs(topLoser.changePercent).toFixed(2)}%, 
+currently trading at NPR ${topLoser.price.toFixed(2)}.
+${watchlistContext}
+
+Is there a specific sector or stock you'd like more information about?`;
+};
