@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -55,7 +56,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ stocks }) => {
     setIsLoading(true);
     
     try {
-      // Call updated Gemini API for response
+      // Call Gemini API for response
       const response = await getMarketInsights(stocks, inputMessage);
       
       // Add assistant message
